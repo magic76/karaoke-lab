@@ -5,6 +5,9 @@ import android.os.Bundle
 import android.content.res.Configuration
 import android.view.Gravity
 import android.view.View
+import android.view.MotionEvent
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import android.widget.FrameLayout
 import android.view.WindowManager
 import android.graphics.Color
@@ -14,7 +17,6 @@ import android.content.res.ColorStateList
 import android.content.Context
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -40,6 +42,12 @@ class MainActivity : Activity() {
  private lateinit var panel:FrameLayout
  private lateinit var collapse:Button
  private lateinit var handle:Button
+ private lateinit var fullscreen:Button
+ private var immersive=false
+ private var customVideo:View?=null
+ private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
+ private var floatYFraction=0.5f
+ private var floatXFraction=1f
  private var controlsOpen=true
  private var enabled=false
  private var retain=15
@@ -94,7 +102,18 @@ class MainActivity : Activity() {
   web=WebView(this).apply {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
-   webChromeClient=WebChromeClient()
+   webChromeClient=object:WebChromeClient() {
+    override fun onShowCustomView(view:View?,callback:CustomViewCallback?) {
+     if(view==null || customVideo!=null) {callback?.onCustomViewHidden();return}
+     customVideo=view
+     customVideoCallback=callback
+     detach(view)
+     panel.addView(view,FrameLayout.LayoutParams(-1,-1))
+     view.bringToFront()
+     applySystemBars()
+    }
+    override fun onHideCustomView() {closeCustomVideo()}
+   }
    webViewClient=object:WebViewClient() {
     override fun onPageFinished(view:WebView?,url:String?) {
      address.setText(url ?: "")
@@ -112,6 +131,8 @@ class MainActivity : Activity() {
   }
   toggle=styledButton("開啟卡拉 OK",true).apply {setOnClickListener {setKaraoke(!enabled)}}
   footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(46)))
+  fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;applySystemBars();layoutForOrientation() }}
+  footer.addView(fullscreen,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
@@ -148,6 +169,44 @@ class MainActivity : Activity() {
    }
   }
   panel=FrameLayout(this)
+  handle.setOnTouchListener(object:View.OnTouchListener {
+   private var downX=0f
+   private var downY=0f
+   private var startX=0f
+   private var startY=0f
+   private var dragging=false
+   override fun onTouch(v:View,event:MotionEvent):Boolean {
+    if(!landscape())return false
+    when(event.actionMasked) {
+     MotionEvent.ACTION_DOWN -> {
+      downX=event.rawX;downY=event.rawY
+      startX=v.x;startY=v.y
+      dragging=false;return true
+     }
+     MotionEvent.ACTION_MOVE -> {
+      val dx=event.rawX-downX;val dy=event.rawY-downY
+      if(kotlin.math.abs(dx)>dp(8) || kotlin.math.abs(dy)>dp(8))dragging=true
+      if(dragging) {
+       val maxX=(panel.width-v.width).coerceAtLeast(0).toFloat()
+       val maxY=(panel.height-v.height).coerceAtLeast(0).toFloat()
+       v.x=(startX+dx).coerceIn(0f,maxX)
+       v.y=(startY+dy).coerceIn(0f,maxY)
+      }
+      return true
+     }
+     MotionEvent.ACTION_UP -> {
+      if(dragging) {
+       val maxX=(panel.width-v.width).coerceAtLeast(1).toFloat()
+       val maxY=(panel.height-v.height).coerceAtLeast(1).toFloat()
+       floatXFraction=(v.x/maxX).coerceIn(0f,1f)
+       floatYFraction=(v.y/maxY).coerceIn(0f,1f)
+      } else {controlsOpen=true;updateControls()}
+      return true
+     }
+     else -> return true
+    }
+   }
+  })
   setContentView(root)
   layoutForOrientation()
   web.loadUrl("https://www.youtube.com/")
@@ -169,7 +228,13 @@ class MainActivity : Activity() {
    drawer.addView(footer,LinearLayout.LayoutParams(-1,-2))
    panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
    handle.text="♫"
-   panel.addView(handle,FrameLayout.LayoutParams(dp(48),dp(54),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
+   panel.addView(handle,FrameLayout.LayoutParams(dp(48),dp(54),Gravity.TOP or Gravity.LEFT))
+   panel.post {
+    val maxX=(panel.width-handle.width).coerceAtLeast(0).toFloat()
+    val maxY=(panel.height-handle.height).coerceAtLeast(0).toFloat()
+    handle.x=maxX*floatXFraction
+    handle.y=maxY*floatYFraction
+   }
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
   } else {
    root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
@@ -182,13 +247,16 @@ class MainActivity : Activity() {
   }
   updateControls()
   root.requestApplyInsets()
+  applySystemBars()
  }
  private fun updateControls() {
   if(landscape()) {
+   navigation.visibility=View.VISIBLE
    collapse.visibility=View.VISIBLE
    drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
    handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
   } else {
+   navigation.visibility=if(immersive)View.GONE else View.VISIBLE
    footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
    handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
    collapse.visibility=if(controlsOpen)View.VISIBLE else View.GONE
@@ -197,6 +265,23 @@ class MainActivity : Activity() {
  override fun onConfigurationChanged(newConfig:Configuration) {
   super.onConfigurationChanged(newConfig)
   layoutForOrientation()
+ }
+ private fun applySystemBars() {
+  val hide=immersive || customVideo!=null
+  @Suppress("DEPRECATION")
+  window.decorView.systemUiVisibility=if(hide)
+   (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+   else 0
+  fullscreen.text=if(immersive)"⛶  離開全螢幕" else "⛶  全螢幕"
+ }
+ private fun closeCustomVideo() {
+  val view=customVideo ?: return
+  (view.parent as? ViewGroup)?.removeView(view)
+  customVideo=null
+  val callback=customVideoCallback
+  customVideoCallback=null
+  callback?.onCustomViewHidden()
+  applySystemBars()
  }
  private fun navigate() {
   val raw=address.text.toString().trim()
@@ -264,7 +349,12 @@ class MainActivity : Activity() {
  }
  @Deprecated("Deprecated in Java")
  override fun onBackPressed() {
-  if(web.canGoBack())web.goBack() else super.onBackPressed()
+  when {
+   customVideo!=null -> closeCustomVideo()
+   immersive -> {immersive=false;applySystemBars();layoutForOrientation()}
+   web.canGoBack() -> web.goBack()
+   else -> super.onBackPressed()
+  }
  }
- override fun onDestroy() {web.destroy();super.onDestroy()}
+ override fun onDestroy() {closeCustomVideo();web.destroy();super.onDestroy()}
 }
