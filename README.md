@@ -46,3 +46,19 @@ Outputs:
 
 The first invocation may download model weights. This experiment processes the full file offline, and may take substantially longer than the media duration on CPU. There is no automatic YouTube stream capture, DRM bypass, or WebView audio replacement. Audio/video synchronization and separation artifacts must be tested on actual samples before Android integration.
 
+
+## Android AI mode (v0.19)
+
+The Android app now includes **AI 去人聲（本機檔案）** in its collapsible controls. It opens a dedicated screen where you configure a **self-hosted HTTPS inference endpoint** and bearer token, pick an authorized local audio/video file, upload it for Demucs separation, and play the resulting instrumental (video preserved if provided).
+
+Start the backend on a computer/server (Python environment with PyTorch, Demucs and FFmpeg):
+
+```bash
+python3 -m pip install fastapi uvicorn python-multipart demucs
+export KARAOKE_AI_TOKEN="replace-with-a-long-random-secret"
+python3 -m uvicorn tools.ai_server:app --host 127.0.0.1 --port 8765
+```
+
+Expose it only through an authenticated HTTPS reverse proxy / tunnel (for example, `https://your-domain/separate`). **Do not expose the inference port directly to the internet.** Enter that full endpoint URL and the matching token in the Android screen. Processing is offline/batch on the server, not on-device or real-time. It does not extract audio from YouTube or replace the YouTube WebView stream. Uploaded files are deleted by the server after the response finishes, except interrupted/crashed jobs which may require manual cleanup. The token is currently saved in Android app preferences, not hardware-backed encrypted storage; use a dedicated, revocable token.
+
+**Not yet validated:** Android compilation, actual APK, inference throughput, real-device playback and video synchronization.
