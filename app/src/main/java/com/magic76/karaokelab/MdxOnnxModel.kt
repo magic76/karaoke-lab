@@ -9,9 +9,9 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /** MDX-NET 3_9662 ONNX inference; model produces a vocals stem. */
-class MdxOnnxModel(modelFile: File) : SpectrogramModel {
+class MdxOnnxModel(modelFile: File, threads:Int=2) : SpectrogramModel {
  private val env=OrtEnvironment.getEnvironment()
- private val options=OrtSession.SessionOptions().apply {setIntraOpNumThreads(2)}
+ private val options=OrtSession.SessionOptions().apply {setIntraOpNumThreads(threads.coerceIn(1,8))}
  private val session=try {env.createSession(modelFile.absolutePath,options)}catch(t:Throwable){options.close();throw t}
  private val count=4*2048*256
  override val input:FloatBuffer=ByteBuffer.allocateDirect(count*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
