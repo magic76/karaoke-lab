@@ -358,7 +358,7 @@ class MainActivity : Activity() {
        const lowOriginal=ctx.createGain(),lowSide=ctx.createGain();
        const out=ctx.createGain();
        // All paths feed a single output gain to prevent accidental double volume.
-       src.connect(dry);dry.connect(out);
+       src.connect(originalHigh);originalHigh.connect(dry);dry.connect(out);
        merge.connect(sideHigh);sideHigh.connect(wet);wet.connect(out);
        src.connect(originalLow);originalLow.connect(lowOriginal);lowOriginal.connect(out);
        merge.connect(sideLow);sideLow.connect(lowSide);lowSide.connect(out);
@@ -373,7 +373,7 @@ class MainActivity : Activity() {
       // Smooth all changes to avoid clicks.
       k.dry.gain.setTargetAtTime(1-strength,t,alpha);
       k.wet.gain.setTargetAtTime(strength,t,alpha);
-      k.lowOriginal.gain.setTargetAtTime(strength*bass,t,alpha);
+      k.lowOriginal.gain.setTargetAtTime(1-strength+strength*bass,t,alpha);
       k.lowSide.gain.setTargetAtTime(strength*(1-bass),t,alpha);
       k.out.gain.setTargetAtTime(Math.min(1,volume),t,alpha);
       k.ctx.resume();changed++;
