@@ -35,6 +35,7 @@ class CaptureService:Service() {
    recorder=AudioRecord.Builder().setAudioFormat(format).setBufferSizeInBytes(maxOf(minimum,19200)).setAudioPlaybackCaptureConfig(config).build()
    check(recorder?.state==AudioRecord.STATE_INITIALIZED)
    recorder?.startRecording(); running=true
+   getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","").apply()
    thread=Thread {
     val samples=ShortArray(4800)
     while(running) {
@@ -53,7 +54,7 @@ class CaptureService:Service() {
 
     }
    }.apply { start() }
-  } catch(e:Exception) { Log.e("KaraokeCapture","Capture failed",e); stopSelf() }
+  } catch(e:Exception) { Log.e("KaraokeCapture","Capture failed",e); getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error",e.message ?: e.javaClass.simpleName).apply(); stopSelf() }
   return START_NOT_STICKY
  }
  override fun onDestroy() {

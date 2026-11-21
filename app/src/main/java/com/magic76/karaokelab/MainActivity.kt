@@ -1,6 +1,12 @@
 package com.magic76.karaokelab
 
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import android.os.Handler
+import android.os.Looper
+import android.content.Intent
 import android.os.Bundle
 import android.content.res.Configuration
 import android.view.Gravity
@@ -25,7 +31,6 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.net.Uri
-import android.content.Intent
 import org.json.JSONObject
 
 /** Generic WebView karaoke: stereo center cancellation, not AI separation. */
@@ -45,6 +50,10 @@ class MainActivity : Activity() {
  private lateinit var fullscreen:Button
  private lateinit var qualityButton:Button
  private var qualityMode=0
+ private lateinit var captureButton:Button
+ private val captureHandler=Handler(Looper.getMainLooper())
+ private var captureProbeActive=false
+ private val captureRefresh=object:Runnable {override fun run(){if(!captureProbeActive)return;val prefs=getSharedPreferences("capture_probe",MODE_PRIVATE);val age=System.currentTimeMillis()-prefs.getLong("timestamp",0);val rms=java.lang.Double.longBitsToDouble(prefs.getLong("rms",0));val peak=java.lang.Double.longBitsToDouble(prefs.getLong("peak",0));val error=prefs.getString("error","").orEmpty();status.text=if(error.isNotEmpty())"音訊擷取失敗：$error" else if(age in 0..2500) "WebView 音訊擷取：RMS %.4f / Peak %.4f".format(rms,peak) else "等待 WebView 音訊（可能不允許擷取）";captureHandler.postDelayed(this,700)}}
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -148,7 +157,8 @@ class MainActivity : Activity() {
    }
   }
   footer.addView(qualityButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
-  footer.addView(styledButton("手機 AI 模型 · 下載測試").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java))}},LinearLayout.LayoutParams(-1,dp(42)).apply {topMargin=dp(8)})
+  captureButton=styledButton("檢測 WebView 音訊擷取").apply {setOnClickListener {if(captureProbeActive)stopCaptureProbe() else startCaptureProbe()}}
+  footer.addView(captureButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
@@ -428,6 +438,35 @@ class MainActivity : Activity() {
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
   }
  }
+ private fun startCaptureProbe() {
+  if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
+   requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO),4205);return
+  }
+  val manager=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+  startActivityForResult(manager.createScreenCaptureIntent(),4206)
+ }
+ private fun stopCaptureProbe() {
+  captureProbeActive=false;captureHandler.removeCallbacks(captureRefresh)
+  startService(Intent(this,CaptureService::class.java).setAction(CaptureService.STOP))
+  captureButton.text="檢測 WebView 音訊擷取"
+  status.text="已停止音訊擷取測試"
+ }
+ override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
+  super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+  if(requestCode==4205) {if(grantResults.firstOrNull()==PackageManager.PERMISSION_GRANTED)startCaptureProbe() else status.text="需要錄音權限才能檢測播放音訊"}
+ }
+ @Deprecated("Deprecated in Java")
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode!=4206)return
+  if(resultCode!=RESULT_OK || data==null){status.text="未授權音訊擷取";return}
+  getSharedPreferences("capture_probe",MODE_PRIVATE).edit().clear().apply()
+  try {
+   startForegroundService(Intent(this,CaptureService::class.java).setAction(CaptureService.START).putExtra(CaptureService.CODE,resultCode).putExtra(CaptureService.DATA,data))
+   captureProbeActive=true;captureButton.text="停止 WebView 音訊檢測"
+   captureHandler.post(captureRefresh)
+  }catch(e:Exception){status.text="啟動擷取失敗："+e.message}
+ }
  @Deprecated("Deprecated in Java")
  override fun onBackPressed() {
   when {
@@ -437,5 +476,5 @@ class MainActivity : Activity() {
    else -> super.onBackPressed()
   }
  }
- override fun onDestroy() {closeCustomVideo();web.destroy();super.onDestroy()}
+ override fun onDestroy() {if(captureProbeActive)stopCaptureProbe();closeCustomVideo();web.destroy();super.onDestroy()}
 }

@@ -109,3 +109,9 @@ The local-file pipeline now includes:
 The FFT/STFT/separator source is adapted from Murem under its MIT license; see `THIRD_PARTY_MUREM_LICENSE.txt`.
 
 **Unverified:** APK compile, model download availability, exact ONNX runtime tensor compatibility, real-device quality, performance, storage usage, and audio synchronization. This path operates on locally selected files only; it does not capture or replace protected YouTube WebView playback audio. Do not merge or publish as a working AI karaoke feature before testing.
+
+## Product scope: WebView-only karaoke
+
+The main screen intentionally offers **WebView playback only**. The standalone local-file AI model test entry is hidden because it cannot process YouTube audio from the WebView. Existing center-cancellation DSP modes remain accessible; these are not AI vocal separation.
+
+The experimental ONNX/local-file source code remains in the repository but is **not part of the user-facing karaoke workflow**. Do not advertise it as working YouTube AI removal. Future WebView AI processing requires a legally and technically accessible audio stream; WebView does not expose a universal raw YouTube PCM capture API. Some media may be cross-origin or protected.
