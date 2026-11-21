@@ -163,7 +163,7 @@ class MainActivity : Activity() {
   selfTestButton=styledButton("播放 3 秒測試音（檢查擷取）").apply {setOnClickListener {
    if(!captureProbeActive) {status.text="請先啟動 WebView 音訊擷取檢測";return@setOnClickListener}
    getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putLong("selftest_peak",0).apply()
-   startService(Intent(this,CaptureService::class.java).setAction(CaptureService.SELF_TEST))
+   startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.SELF_TEST))
   }}
   footer.addView(selfTestButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
