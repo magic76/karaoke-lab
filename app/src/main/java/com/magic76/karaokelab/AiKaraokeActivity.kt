@@ -48,7 +48,7 @@ class AiKaraokeActivity : Activity() {
    textSize=15f
    setTextColor(Color.WHITE)
    setPadding(0,24,0,24)
-   text="實驗版：可選擇本機 44.1 kHz 歌曲、下載模型並產生伴奏。尚未經手機實測；YouTube 影片不能直接使用這條流程。"
+   text=if(intent.getBooleanExtra("webview_only",false))"下載／驗證 WebView AI 實驗使用的 ONNX 模型。此頁不需選擇本機歌曲。" else "實驗版：可選擇本機 44.1 kHz 歌曲、下載模型並產生伴奏。尚未經手機實測；YouTube 影片不能直接使用這條流程。"
   }
   root.addView(status)
   action=Button(this).apply {
@@ -56,9 +56,9 @@ class AiKaraokeActivity : Activity() {
    setOnClickListener {confirmDownload()}
   }
   root.addView(action)
-  root.addView(Button(this).apply {text="選擇本機歌曲";setOnClickListener {pickAudio()}})
+  if(!intent.getBooleanExtra("webview_only",false))root.addView(Button(this).apply {text="選擇本機歌曲";setOnClickListener {pickAudio()}})
   processButton=Button(this).apply {text="AI 去人聲（本機檔案）";setOnClickListener {separateLocal()}}
-  root.addView(processButton)
+  if(!intent.getBooleanExtra("webview_only",false))root.addView(processButton)
   root.addView(Button(this).apply {
    text="返回卡拉 OK"
    setOnClickListener {finish()}

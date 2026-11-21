@@ -54,7 +54,7 @@ class MainActivity : Activity() {
  private lateinit var selfTestButton:Button
  private val captureHandler=Handler(Looper.getMainLooper())
  private var captureProbeActive=false
- private val captureRefresh=object:Runnable {override fun run(){if(!captureProbeActive)return;val prefs=getSharedPreferences("capture_probe",MODE_PRIVATE);val age=System.currentTimeMillis()-prefs.getLong("timestamp",0);val rms=java.lang.Double.longBitsToDouble(prefs.getLong("rms",0));val peak=java.lang.Double.longBitsToDouble(prefs.getLong("peak",0));val error=prefs.getString("error","").orEmpty();val testPeak=java.lang.Double.longBitsToDouble(prefs.getLong("selftest_peak",0));val testAge=System.currentTimeMillis()-prefs.getLong("selftest_started",0);val testInfo=if(testAge in 0..12000) " / 測試峰值 %.4f".format(testPeak) else "";status.text=if(error.isNotEmpty())"音訊擷取失敗：$error" else if(age in 0..2500) "WebView 音訊擷取：RMS %.4f / Peak %.4f".format(rms,peak)+testInfo else "等待 WebView 音訊（可能不允許擷取）";captureHandler.postDelayed(this,700)}}
+ private val captureRefresh=object:Runnable {override fun run(){if(!captureProbeActive)return;val prefs=getSharedPreferences("capture_probe",MODE_PRIVATE);val age=System.currentTimeMillis()-prefs.getLong("timestamp",0);val rms=java.lang.Double.longBitsToDouble(prefs.getLong("rms",0));val peak=java.lang.Double.longBitsToDouble(prefs.getLong("peak",0));val error=prefs.getString("error","").orEmpty();val aiStatus=prefs.getString("ai_status","").orEmpty();val testPeak=java.lang.Double.longBitsToDouble(prefs.getLong("selftest_peak",0));val testAge=System.currentTimeMillis()-prefs.getLong("selftest_started",0);val testInfo=if(testAge in 0..12000) " / 測試峰值 %.4f".format(testPeak) else "";status.text=if(error.isNotEmpty())"音訊擷取失敗：$error" else if(age in 0..2500) "WebView 音訊擷取：RMS %.4f / Peak %.4f".format(rms,peak)+testInfo else "等待 WebView 音訊（可能不允許擷取）";if(aiStatus.isNotEmpty())status.text+="\n"+aiStatus;captureHandler.postDelayed(this,700)}}
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -166,6 +166,11 @@ class MainActivity : Activity() {
    startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.SELF_TEST))
   }}
   footer.addView(selfTestButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  footer.addView(styledButton("下載／驗證 AI 模型").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java).putExtra("webview_only",true))}},LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  footer.addView(styledButton("分析 7 秒 WebView 音訊（AI 實驗）").apply {setOnClickListener {
+   if(!captureProbeActive){status.text="請先啟動音訊擷取";return@setOnClickListener}
+   startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.AI_PROBE))
+  }},LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
