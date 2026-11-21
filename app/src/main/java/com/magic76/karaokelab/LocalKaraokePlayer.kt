@@ -13,6 +13,7 @@ import kotlin.math.max
  */
 class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Uri) {
  @Volatile var mode:Int=0
+ @Volatile var modelUri:Uri?=null
  @Volatile var onStatus:((String)->Unit)?=null
  private val active=AtomicBoolean(false)
  private var thread:Thread?=null
@@ -29,6 +30,8 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
  private fun decode() {
   val extractor=MediaExtractor()
   var codec:MediaCodec?=null
+  var inference:InstrumentalOnnx?=null
+  val aiPending=java.io.ByteArrayOutputStream()
   try {
    resolver.openAssetFileDescriptor(uri,"r")?.use { afd ->
     extractor.setDataSource(afd.fileDescriptor,afd.startOffset,afd.length)
@@ -44,6 +47,12 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
    codec=MediaCodec.createDecoderByType(mime)
    codec.configure(format,null,null,0)
    codec.start()
+   if(mode==2) {
+    val uri=modelUri ?: error("Choose an ONNX model before AI playback")
+    val bytes=resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot open ONNX model")
+    require(bytes.size<=200_000_000) { "Model exceeds 200 MB limit" }
+    inference=InstrumentalOnnx(bytes)
+   }
    val info=MediaCodec.BufferInfo()
    var inputDone=false
    var outputDone=false
@@ -80,6 +89,7 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
       .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
       .setBufferSizeInBytes(max(min,sampleRate*channels*2/4))
       .setTransferMode(AudioTrack.MODE_STREAM).build()
+     if(inference!=null) check(sampleRate==48000 && channels==2) { "AI mode requires stereo 48 kHz audio" }
      track?.play()
      onStatus?.invoke("Playing local audio: $sampleRate Hz, $channels ch. Center cancel is experimental DSP, not AI.")
     } else if(index>=0) {
@@ -98,6 +108,32 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
         pcm.putShort(i+2,(-difference.toInt()).toShort())
        }
       }
+      if(inference!=null) {
+       aiPending.write(bytes)
+       val blockSize=48000*2*2
+       while(active.get() && aiPending.size()>=blockSize) {
+        val pending=aiPending.toByteArray()
+        val pcm=java.nio.ByteBuffer.wrap(pending,0,blockSize).order(ByteOrder.LITTLE_ENDIAN)
+        val input=ShortArray(96000) { pcm.short }
+        val started=System.nanoTime()
+        val output=requireNotNull(inference).instrumental(input)
+        val elapsedMs=(System.nanoTime()-started)/1_000_000
+        onStatus?.invoke("AI block: "+elapsedMs+"ms / 1000ms audio")
+        val outBytes=java.nio.ByteBuffer.allocate(blockSize).order(ByteOrder.LITTLE_ENDIAN)
+        output.forEach { outBytes.putShort(it) }
+        var offset=0
+        while(active.get() && offset<blockSize) {
+         val count=track?.write(outBytes.array(),offset,blockSize-offset,AudioTrack.WRITE_BLOCKING) ?: -1
+         check(count>0) { "AudioTrack write failed: $count" }
+         offset+=count
+        }
+        aiPending.reset()
+        aiPending.write(pending,blockSize,pending.size-blockSize)
+       }
+       codec.releaseOutputBuffer(index,false)
+       if(info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM!=0) outputDone=true
+       continue
+      }
       var written=0
       while(active.get() && written<bytes.size) {
        val n=track?.write(bytes,written,bytes.size-written,AudioTrack.WRITE_BLOCKING) ?: -1
@@ -109,6 +145,7 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
      if(info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM!=0) outputDone=true
     }
    }
+   if(outputDone && inference!=null && aiPending.size()>0) onStatus?.invoke("AI tail omitted: less than 1 second")
    if(outputDone) onStatus?.invoke("Playback complete")
   } catch(e:Exception) {
    if(active.get()) onStatus?.invoke("Playback error: "+e.message)
@@ -118,6 +155,7 @@ class LocalKaraokePlayer(private val resolver:ContentResolver,private val uri:Ur
    track?.release(); track=null
    try { codec?.stop() } catch(_:Exception) {}
    codec?.release()
+   inference?.close()
    extractor.release()
   }
  }

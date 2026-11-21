@@ -14,22 +14,26 @@ class MainActivity: Activity() {
  private var karaoke:LocalKaraokePlayer?=null
  private var selected:Uri?=null
  private var mode=0
+ private var model:Uri?=null
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
   val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
   val controls=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-  status=TextView(this).apply { text="Karaoke Lab v0.2 — local karaoke + YouTube capture diagnostics"; setPadding(12,12,12,12) }
+  status=TextView(this).apply { text="Karaoke Lab v0.3 — local karaoke + YouTube capture diagnostics"; setPadding(12,12,12,12) }
   fun button(label:String,action:()->Unit) { controls.addView(Button(this).apply { text=label; setOnClickListener { action() } }) }
   button("1. Choose local audio (MP3 / M4A / WAV)") {
    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="audio/*"; addCategory(Intent.CATEGORY_OPENABLE) },201)
   }
   val modes=RadioGroup(this).apply { orientation=RadioGroup.HORIZONTAL }
-  arrayOf("Original","Center cancel").forEachIndexed { index,label ->
+  arrayOf("Original","Center cancel","AI ONNX").forEachIndexed { index,label ->
    modes.addView(RadioButton(this).apply { text=label; id=1000+index })
   }
   modes.check(1000)
   modes.setOnCheckedChangeListener { _,id -> mode=id-1000; karaoke?.mode=mode }
   controls.addView(modes)
+  button("Choose AI ONNX model (experimental)") {
+   startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="*/*"; addCategory(Intent.CATEGORY_OPENABLE) },202)
+  }
   button("2. Play local karaoke") {
    val uri=selected
    if(uri==null) status.text="Choose a local audio file first"
@@ -37,6 +41,7 @@ class MainActivity: Activity() {
     karaoke?.stop()
     karaoke=LocalKaraokePlayer(contentResolver,uri).also {
      it.mode=mode
+     it.modelUri=model
      it.onStatus={ msg -> runOnUiThread { status.text=msg } }
      it.play()
     }
@@ -75,7 +80,9 @@ class MainActivity: Activity() {
  }
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
   super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode==201 && resultCode==RESULT_OK && data?.data!=null) {
+  if(requestCode==202 && resultCode==RESULT_OK && data?.data!=null) {
+   model=data.data; status.text="Selected ONNX model: "+model.toString()
+  } else if(requestCode==201 && resultCode==RESULT_OK && data?.data!=null) {
    selected=data.data
    status.text="Selected: "+selected.toString()
   } else if(requestCode==101 && resultCode==RESULT_OK && data!=null) {

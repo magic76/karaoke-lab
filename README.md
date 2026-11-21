@@ -1,11 +1,13 @@
-# Karaoke Lab v0.2
+# Karaoke Lab v0.3
 
 Personal Android research APK, built for local testing on Galaxy S25 Ultra.
 
-## Two independent experiments
+## Three independent experiments
 
 1. **Local karaoke DSP:** choose a local audio file, play original audio or switch to center-cancellation mode while playing. This is basic phase-based DSP, **not AI**. Stereo center cancellation may reduce centered lead vocals, but also removes centered instruments and may leave vocals. Mono files have no cancellation.
 2. **YouTube WebView audio capture diagnostics:** open YouTube in WebView and request MediaProjection consent. The service logs RMS and peak to Logcat under `KaraokeCapture`. It does not store, modify, or reroute YouTube audio.
+
+3. **Experimental AI ONNX:** choose a compatible instrumental-output ONNX model and play local stereo 48 kHz audio. See [model contract](docs/ONNX_MODEL.md). **No pretrained model is included.**
 
 ## Local build
 
@@ -25,7 +27,7 @@ Requires Android SDK 35, JDK 17, Gradle 8.9 (Gradle wrapper not included). Impor
 
 ## Known limits
 
-- No AI vocal separation, pitch shifting, lyric synchronization, microphone mixing or YouTube audio modification yet.
+- No bundled pretrained AI model, pitch shifting, lyric synchronization, microphone mixing or YouTube audio modification yet.
 - Local playback is decoded via MediaCodec and supports 16-bit mono/stereo PCM output. Some formats/decoders may output float PCM and report unsupported encoding.
 - No DRM/capture-policy bypass. A nonzero capture signal is not proof of which app produced it.
 - The app is a research prototype, not a finished karaoke player.
