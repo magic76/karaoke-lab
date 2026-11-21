@@ -7,6 +7,8 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
+import android.media.MediaPlayer
+import kotlinx.coroutines.runBlocking
 import android.graphics.Color
 import android.widget.*
 import java.io.File
@@ -27,6 +29,8 @@ class AiKaraokeActivity : Activity() {
  private val modelBytes = 29704436L
  private val modelSha256 = "e02220e80d8253f4c2209f8924298b2b686bbdf2868b788ff5500fb9bd94aadc"
  private var busy = false
+ private var player:MediaPlayer?=null
+ private lateinit var processButton:Button
  private fun modelFile() = File(filesDir, modelName)
 
  override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +58,8 @@ class AiKaraokeActivity : Activity() {
   }
   root.addView(action)
   root.addView(Button(this).apply {text="選擇本機歌曲 · 測試解碼";setOnClickListener {pickAudio()}})
+  processButton=Button(this).apply {text="AI 去人聲（本機檔案）";setOnClickListener {separateLocal()}}
+  root.addView(processButton)
   root.addView(Button(this).apply {
    text="返回卡拉 OK"
    setOnClickListener {finish()}
@@ -88,6 +94,47 @@ class AiKaraokeActivity : Activity() {
    }finally {runOnUiThread {busy=false;action.isEnabled=true}}
   }.start()
  }
+ private fun separateLocal() {
+  if(busy)return
+  if(!modelFile().exists()){status.text="請先下載 AI 模型";return}
+  val pcm=File(cacheDir,"ai-source.pcm")
+  if(!pcm.exists() || pcm.length()==0L){status.text="請先選擇本機歌曲並完成解碼";return}
+  busy=true;action.isEnabled=false;processButton.isEnabled=false
+  Thread {
+   val output=File(cacheDir,"ai-instrumental.wav")
+   try {
+    verify(modelFile())
+    PcmFileSource(pcm).use {src->
+     MdxOnnxModel(modelFile()).use {model->
+      InstrumentalWavSink(src,output).use {sink->
+       val params=MdxParams(nFft=6144,dimF=2048,dimT=256,hop=1024,compensate=1.035f,overlap=0.25)
+       runBlocking {
+        MdxSeparator(params,model).demix(src,1f,PrimarySink {pos,l,r,count->
+         for(i in 0 until count){l[i]*=params.compensate;r[i]*=params.compensate}
+         sink.accept(pos,l,r,count)
+        }) {done,total->
+         if(done==total || done%8==0)runOnUiThread {status.text="AI 分離中："+(done*100/total)+"%"}
+        }
+       }
+      }
+     }
+    }
+    runOnUiThread {
+     status.text="伴奏已產生，準備播放："+output.length()+" bytes"
+     player?.release()
+     player=MediaPlayer().apply {
+      setDataSource(output.absolutePath)
+      prepare()
+      start()
+     }
+    }
+   }catch(e:Exception) {
+    output.delete()
+    runOnUiThread {status.text="AI 分離失敗："+(e.message ?: "未知錯誤")}
+   }finally {runOnUiThread {busy=false;action.isEnabled=true;processButton.isEnabled=true}}
+  }.start()
+ }
+ override fun onDestroy(){player?.release();player=null;super.onDestroy()}
  private fun confirmDownload() {
   if(busy)return
   AlertDialog.Builder(this)
