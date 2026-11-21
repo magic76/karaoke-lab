@@ -1,5 +1,5 @@
 # Karaoke Lab
 
-Personal Android research app: embedded YouTube player, audio capture feasibility diagnostics, and future licensed/local-media karaoke processing.
+Android WebView + AudioPlaybackCapture feasibility research. See [research protocol](docs/RESEARCH.md).
 
-See `docs/RESEARCH.md` for the technical boundaries. The capture probe does **not** bypass capture policies or extract YouTube streams.
+This initial prototype only logs PCM signal levels. It does not remove vocals or extract YouTube streams.
