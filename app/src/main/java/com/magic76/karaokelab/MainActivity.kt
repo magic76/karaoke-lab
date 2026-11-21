@@ -54,7 +54,7 @@ class MainActivity : Activity() {
  private fun styledButton(label:String,primary:Boolean=false)=Button(this).apply {
   text=label;isAllCaps=false;textSize=14f
   typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-  setTextColor(if(primary)background else Color.WHITE)
+  setTextColor(if(primary)this@MainActivity.background else Color.WHITE)
   backgroundTintList=null
   background=shape(if(primary)accent else Color.rgb(37,43,65),14,
    if(primary)0 else Color.rgb(70,78,105))
