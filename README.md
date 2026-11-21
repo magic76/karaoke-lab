@@ -96,3 +96,16 @@ The old `tools/ai_server.py` remains in the repository as an unused legacy exper
 - The UI reports decoded frame counts and **does not claim vocals were removed**.
 
 **Still unimplemented:** MDX-Net STFT/iSTFT, inference over actual PCM, instrumental subtraction, WAV/MP4 export, and playback synchronization. This PR is not production-ready. Compilation and real-device tests remain outstanding.
+
+## Experimental local AI vocal separation (PR #1, not device-tested)
+
+The local-file pipeline now includes:
+
+1. Android MediaCodec extraction to 44.1kHz stereo float PCM (currently rejects other sample rates).
+2. Mixed-radix FFT, MDX STFT/iSTFT, tiled ONNX inference with overlap-add.
+3. Vocal-stem compensation and subtraction from the original mix.
+4. 16-bit stereo WAV output in app cache and MediaPlayer preview.
+
+The FFT/STFT/separator source is adapted from Murem under its MIT license; see `THIRD_PARTY_MUREM_LICENSE.txt`.
+
+**Unverified:** APK compile, model download availability, exact ONNX runtime tensor compatibility, real-device quality, performance, storage usage, and audio synchronization. This path operates on locally selected files only; it does not capture or replace protected YouTube WebView playback audio. Do not merge or publish as a working AI karaoke feature before testing.
