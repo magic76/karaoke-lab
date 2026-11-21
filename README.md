@@ -1,33 +1,27 @@
-# Karaoke Lab v0.4
+# Karaoke Lab v0.5
 
-Personal Android research APK, built for local testing on Galaxy S25 Ultra.
+## Primary goal
 
-## Three independent experiments
+Play a YouTube MV and hear a vocal-reduced soundtrack with synchronized video. **This goal is not yet implemented.**
 
-1. **Local karaoke DSP:** choose a local audio file, play original audio or switch to center-cancellation mode while playing. This is basic phase-based DSP, **not AI**. Stereo center cancellation may reduce centered lead vocals, but also removes centered instruments and may leave vocals. Mono files have no cancellation.
-2. **YouTube WebView audio capture diagnostics:** open YouTube in WebView and request MediaProjection consent. The service logs RMS and peak to Logcat under `KaraokeCapture`. It does not store, modify, or reroute YouTube audio.
+The app now has a YouTube-first, single-screen UI. The only visible action is **Test audio capture**. It logs signal levels without changing, saving, or rerouting the audio. It must not be presented as vocal removal.
 
-3. **Experimental AI ONNX:** choose a compatible instrumental-output ONNX model and play local stereo 48 kHz audio. See [model contract](docs/ONNX_MODEL.md). **No pretrained model is included.**
+## Research status
 
-4. **Real pretrained AI separation (offline):** run [Demucs separation](docs/DEMUCS.md) on your own local audio, transfer the instrumental WAV to the phone, then play it in **Demucs instrumental** mode. This uses a real pretrained model, but separation runs on a computer, not on Android.\n\n## Local build
+- On a Galaxy S25 Ultra, a previous controlled test found nonzero captured RMS while YouTube MV was playing, and zero RMS during silence.
+- This does not prove source attribution or establish a way to mute WebView's original audio.
+- Android playback capture is a copy of permitted output, not a mechanism to replace the original stream.
+- Playing processed capture on top of original audio would still leave the original vocals audible and create latency/echo.
+- YouTube platform restrictions on audio extraction and modification must be respected.
 
-Requires Android SDK 35, JDK 17, Gradle 8.9 (Gradle wrapper not included). Import with Android Studio or run `gradle :app:assembleDebug`.
+## Archived experiments
 
-## Test checklist
+`LocalKaraokePlayer.kt`, `InstrumentalOnnx.kt`, and `tools/separate_local.py` remain in the repo as research code, but are not part of the user-facing flow. Demucs preprocessing on local audio does not fulfill the YouTube objective.
 
-- [ ] Build debug APK locally
-- [ ] Pick local stereo MP3/M4A/WAV and play original
-- [ ] Switch to Center cancel mid-playback and listen for change
-- [ ] Test mono source (should remain original)
-- [ ] Stop/restart playback repeatedly
-- [ ] Test WebView video playback
-- [ ] Grant capture consent and inspect Logcat RMS in silence vs playback
-- [ ] Stop capture and verify foreground notification is removed
-- [ ] Test Bluetooth output and note audio artifacts
+## Next engineering gate
 
-## Known limits
+Validate whether a permitted playback path exists that gives control of original audio output, audio PCM, and synchronization. Do not ship a misleading vocal-removal toggle until that path exists.
 
-- No bundled pretrained AI model, pitch shifting, lyric synchronization, microphone mixing or YouTube audio modification yet.
-- Local playback is decoded via MediaCodec and supports 16-bit mono/stereo PCM output. Some formats/decoders may output float PCM and report unsupported encoding.
-- No DRM/capture-policy bypass. A nonzero capture signal is not proof of which app produced it.
-- The app is a research prototype, not a finished karaoke player.
+## Build
+
+Android SDK 35, JDK 17, Gradle 8.9; `gradle :app:assembleDebug`. Build and device verification still required.
