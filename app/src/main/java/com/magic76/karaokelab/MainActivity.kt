@@ -2,6 +2,7 @@ package com.magic76.karaokelab
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.WindowManager
 import android.graphics.Color
 import android.content.Context
 import android.view.inputmethod.EditorInfo
@@ -36,7 +37,16 @@ class MainActivity : Activity() {
   window.statusBarColor=background
   window.navigationBarColor=background
   window.decorView.systemUiVisibility=0
-  val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
+  window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+  val root=LinearLayout(this).apply {
+   orientation=LinearLayout.VERTICAL
+   setBackgroundColor(this@MainActivity.background)
+   setOnApplyWindowInsetsListener { view,insets ->
+    @Suppress("DEPRECATION")
+    view.setPadding(0,insets.systemWindowInsetTop,0,insets.systemWindowInsetBottom)
+    insets
+   }
+  }
   val navigation=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4))}
   address=EditText(this).apply {
    setSingleLine(true);setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY)
