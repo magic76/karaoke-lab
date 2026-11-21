@@ -8,9 +8,12 @@ import android.os.*
 import android.util.Log
 import kotlin.math.*
 class CaptureService:Service() {
- companion object { const val START="capture.start"; const val STOP="capture.stop"; const val CODE="code"; const val DATA="data" }
+ companion object { const val START="capture.start"; const val STOP="capture.stop"; const val CODE="code"; const val DATA="data"; const val SELF_TEST="capture.selftest" }
  private var projection:MediaProjection?=null
  private var recorder:AudioRecord?=null
+ private var testPlayer:AudioTrack?=null
+ private var testThread:Thread?=null
+ @Volatile private var testRunning=false
  private var thread:Thread?=null
  @Volatile private var running=false
  override fun onBind(intent:Intent?):IBinder?=null
@@ -20,6 +23,7 @@ class CaptureService:Service() {
  }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   if(intent?.action==STOP) { stopSelf(); return START_NOT_STICKY }
+  if(intent?.action==SELF_TEST) { if(running)startSelfTest() else getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","擷取尚未啟動，無法測試").apply(); return START_NOT_STICKY }
   if(intent?.action!=START || running) return START_NOT_STICKY
   val note=Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Karaoke Lab").setContentText("Analyzing capture level; no audio saved").build()
   startForeground(1,note,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -48,7 +52,9 @@ class CaptureService:Service() {
       getSharedPreferences("capture_probe",MODE_PRIVATE).edit()
        .putLong("timestamp",System.currentTimeMillis())
        .putLong("rms",java.lang.Double.doubleToRawLongBits(rms))
-       .putLong("peak",java.lang.Double.doubleToRawLongBits(peakValue)).apply()
+       .putLong("peak",java.lang.Double.doubleToRawLongBits(peakValue))
+       .putLong("frames_read",count.toLong())
+       .putString("recorder_state","recording").apply()
       Log.i("KaraokeCapture","samples="+count+" rms="+rms+" peak="+peakValue)
      } else Log.w("KaraokeCapture","read="+count)
 
@@ -57,8 +63,46 @@ class CaptureService:Service() {
   } catch(e:Exception) { Log.e("KaraokeCapture","Capture failed",e); getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error",e.message ?: e.javaClass.simpleName).apply(); stopSelf() }
   return START_NOT_STICKY
  }
+ private fun startSelfTest() {
+  if(testRunning)return
+  val rate=48000
+  val attributes=AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_ALL).build()
+  val format=AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
+  val bufferSize=maxOf(AudioTrack.getMinBufferSize(rate,AudioFormat.CHANNEL_OUT_MONO,AudioFormat.ENCODING_PCM_16BIT),rate/5*2)
+  try {
+   val track=AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(format).setBufferSizeInBytes(bufferSize).setTransferMode(AudioTrack.MODE_STREAM).build()
+   testPlayer=track
+   testRunning=true
+   getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putLong("selftest_started",System.currentTimeMillis()).apply()
+   testThread=Thread {
+    try {
+     val data=ShortArray(960)
+     track.play()
+     var frame=0
+     while(testRunning && frame<rate*3) {
+      for(i in data.indices) {
+       val fade=minOf(1.0,(rate*3-frame-i).coerceAtLeast(0).toDouble()/(rate/20))
+       data[i]=(kotlin.math.sin(2.0*Math.PI*440.0*(frame+i)/rate)*6000.0*fade).toInt().toShort()
+      }
+      val written=track.write(data,0,data.size)
+      if(written<=0)break
+      frame+=written
+     }
+    } catch(e:Exception) {
+     getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","測試音播放失敗："+(e.message ?: "unknown")).apply()
+    } finally {
+     testRunning=false
+     try {track.stop()} catch(_:Exception){}
+     track.release()
+     if(testPlayer===track)testPlayer=null
+    }
+   }.apply {start()}
+  }catch(e:Exception){testRunning=false;getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","無法建立測試音："+(e.message ?: "unknown")).apply()}
+ }
  override fun onDestroy() {
   running=false
+  testRunning=false
+  try {testPlayer?.pause();testPlayer?.flush()} catch(_:Exception) {}
   try { recorder?.stop() } catch(_:Exception) {}
   thread?.interrupt(); recorder?.release(); recorder=null
   projection?.stop(); projection=null
