@@ -131,7 +131,7 @@ class MainActivity : Activity() {
   }
   toggle=styledButton("開啟卡拉 OK",true).apply {setOnClickListener {setKaraoke(!enabled)}}
   footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(46)))
-  fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;applySystemBars();layoutForOrientation() }}
+  fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation() }}
   footer.addView(fullscreen,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
