@@ -48,37 +48,59 @@ object WebCaptureAiProbe {
     if(bytes.position()>0)stream.write(bytes.array(),0,bytes.position())
    }
    resampleMs=ms(started)
-   onProgress("AI 推論中")
-   val pipelineStart=System.nanoTime()
-   PcmFileSource(input).use {source->
-    val loadStart=System.nanoTime()
-    MdxOnnxModel(model).use {onnx->
-     modelLoadMs=ms(loadStart)
-     val timed=object:SpectrogramModel {
-      override val input:FloatBuffer get()=onnx.input
-      override val output:FloatBuffer get()=onnx.output
-      override suspend fun run(input:FloatBuffer,output:FloatBuffer) {
-       val t=System.nanoTime()
-       try {onnx.run(input,output)} finally {inferenceMs+=(System.nanoTime()-t)/1_000_000;inferenceCalls++}
+   val variants=mutableListOf<String>()
+   // Run both CPU thread settings on the SAME captured PCM in one user action.
+   // Keep only the first WAV; the second run is a no-output performance comparison.
+   for(threads in listOf(2,4)) {
+    onProgress("CPU ${threads} 執行緒測試中（共兩組）…")
+    val pipelineStart=System.nanoTime()
+    var localInferenceMs=0L
+    var localCalls=0
+    var localLoadMs=0L
+    PcmFileSource(input).use {source->
+     val loadStart=System.nanoTime()
+     MdxOnnxModel(model,threads).use {onnx->
+      localLoadMs=ms(loadStart)
+      val timed=object:SpectrogramModel {
+       override val input:FloatBuffer get()=onnx.input
+       override val output:FloatBuffer get()=onnx.output
+       override suspend fun run(input:FloatBuffer,output:FloatBuffer) {
+        val t=System.nanoTime()
+        try {onnx.run(input,output)} finally {
+         localInferenceMs+=(System.nanoTime()-t)/1_000_000
+         localCalls++
+        }
+       }
+       override fun close() {}
       }
-      override fun close() {} // The owning use block closes the underlying model.
-     }
-     InstrumentalWavSink(source,output).use {sink->
       val params=MdxParams(nFft=6144,dimF=2048,dimT=256,hop=1024,compensate=1.035f,overlap=0.25)
-      runBlocking {MdxSeparator(params,timed).demix(source,1f,PrimarySink {pos,l,r,count->
-       for(i in 0 until count){l[i]*=params.compensate;r[i]*=params.compensate}
-       sink.accept(pos,l,r,count)
-      }) {_,_->}}
+      if(threads==2) {
+       InstrumentalWavSink(source,output).use {sink->
+        runBlocking {MdxSeparator(params,timed).demix(source,1f,PrimarySink {pos,l,r,count->
+         for(i in 0 until count){l[i]*=params.compensate;r[i]*=params.compensate}
+         sink.accept(pos,l,r,count)
+        }) {_,_->}}
+       }
+      } else {
+       runBlocking {MdxSeparator(params,timed).demix(source,1f,PrimarySink {_,_,_,_->}) {_,_->}}
+      }
      }
     }
+    val total=ms(pipelineStart)
+    variants.add("${threads} 執行緒：總計 ${total}ms、載入 ${localLoadMs}ms、推論 ${localInferenceMs}ms／${localCalls} 次、其餘 ${(total-localLoadMs-localInferenceMs).coerceAtLeast(0)}ms")
+    if(threads==2) {
+     modelLoadMs=localLoadMs
+     inferenceMs=localInferenceMs
+     inferenceCalls=localCalls
+     pipelineMs=total
+    }
    }
-   pipelineMs=ms(pipelineStart)
    val elapsed=ms(started)
    val audioMs=frames*1000L/SAMPLE_RATE
-   val realtime=audioMs.toDouble()/elapsed.coerceAtLeast(1)
+   val realtime=audioMs.toDouble()/pipelineMs.coerceAtLeast(1)
    val remaining=pipelineMs-modelLoadMs-inferenceMs
    val verdict=if(realtime>=1.5)"達到速度門檻（仍需驗證串流延遲）" else "未達 1.5× 即時門檻；暫不投入串流整合"
-   return "AI 效能：${audioMs}ms 音訊／總計 ${elapsed}ms（${"%.2f".format(java.util.Locale.US,realtime)}×）\\n轉檔 ${resampleMs}ms、模型載入 ${modelLoadMs}ms、ONNX 推論 ${inferenceMs}ms／${inferenceCalls} 次、STFT/iSTFT/寫檔等 ${remaining.coerceAtLeast(0)}ms\\n${verdict}；伴奏 ${output.length()} bytes，未取代原聲"
+   return "AI 兩組效能測試（${audioMs}ms 音訊）：\\n"+variants.joinToString("\\n")+"\\n轉檔 ${resampleMs}ms、兩組測試合計 ${elapsed}ms；基準速度 ${"%.2f".format(java.util.Locale.US,realtime)}×。${verdict}。伴奏 ${output.length()} bytes，未取代原聲"
   } finally {input.delete()}
  }
 }
