@@ -53,9 +53,11 @@ class AiKaraokeActivity:Activity() {
    val partial=File(filesDir,modelName+".partial")
    var conn:HttpURLConnection?=null
    try {
-    conn=URL(modelUrl).openConnection() as HttpURLConnection
+    conn=URL(modelUrl+"?download=true").openConnection() as HttpURLConnection
+    conn.setRequestProperty("User-Agent","KaraokeLab/0.20 Android")
+    conn.setRequestProperty("Accept","application/octet-stream")
     conn.connectTimeout=20000;conn.readTimeout=60000
-    require(conn.responseCode==200) {"下載 HTTP "+conn.responseCode}
+    require(conn.responseCode==200) {"模型下載 HTTP "+conn.responseCode+"（"+conn.url.host+"），來源拒絕存取；可稍後重試或換網路，不需 API Key"}
     val length=conn.contentLengthLong
     require(length<0 || length in 20000000L..45000000L) {"模型大小異常"}
     var count=0L
@@ -72,6 +74,13 @@ class AiKaraokeActivity:Activity() {
      }
     }
     require(count>=20000000L) {"下載不完整"}
+    val digest=java.security.MessageDigest.getInstance("SHA-256")
+    partial.inputStream().use { input ->
+     val buf=ByteArray(65536)
+     while(true) {val n=input.read(buf);if(n<0)break;digest.update(buf,0,n)}
+    }
+    val sha=digest.digest().joinToString("") {"%02x".format(it)}
+    require(sha=="2a07e11db13a11ca4900a54b4a316ef67931e993a6a3d19444bccbbeb9b445ee") {"模型 SHA-256 不符"}
     if(modelFile().exists())modelFile().delete()
     require(partial.renameTo(modelFile())) {"儲存失敗"}
     validateModel()
