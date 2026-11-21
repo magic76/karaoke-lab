@@ -3,128 +3,111 @@ package com.magic76.karaokelab
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
-import android.content.Intent
-import android.net.Uri
 import android.graphics.Color
 import android.widget.*
+import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
 
-/** Local-file AI separation via a user-configured HTTPS Demucs server. */
+/** Local model download and inference-engine validation; no server or upload. */
 class AiKaraokeActivity:Activity() {
- private lateinit var message:TextView
- private lateinit var video:VideoView
- private lateinit var choose:Button
+ private lateinit var status:TextView
+ private lateinit var action:Button
+ private val modelName="UVR_MDXNET_9482.fp16acc.tflite"
+ private val modelUrl="https://huggingface.co/gyoom-sa/UVR-MDX-LiteRT/resolve/main/"+modelName
+ private fun modelFile()=File(filesDir,modelName)
  private var busy=false
-
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
   val root=LinearLayout(this).apply {
-   orientation=LinearLayout.VERTICAL
-   setPadding(24,36,24,24)
+   orientation=LinearLayout.VERTICAL;setPadding(32,48,32,24)
    setBackgroundColor(Color.rgb(18,22,38))
   }
-  message=TextView(this).apply {
-   setTextColor(Color.WHITE);textSize=15f
-   text="AI 人聲分離：選擇有權處理的本機歌曲或影片。需要自行設定 HTTPS Demucs 伺服器。"
+  root.addView(TextView(this).apply {text="手機 AI 模型";textSize=24f;setTextColor(Color.WHITE)})
+  status=TextView(this).apply {
+   textSize=15f;setTextColor(Color.WHITE);setPadding(0,24,0,24)
+   text="本機模型測試：尚未接通音訊分離或 YouTube。"
   }
-  root.addView(message)
-  choose=Button(this).apply {text="選擇歌曲／影片";setOnClickListener {pickFile()}}
-  root.addView(choose)
-  root.addView(Button(this).apply {text="設定 AI 伺服器";setOnClickListener {configure()}})
-  video=VideoView(this)
-  root.addView(video,LinearLayout.LayoutParams(-1,0,1f))
-  root.addView(Button(this).apply {text="返回網頁播放器";setOnClickListener {finish()}})
+  root.addView(status)
+  action=Button(this).apply {text="下載／驗證本機 AI 模型";setOnClickListener {confirmDownload()}}
+  root.addView(action)
+  root.addView(Button(this).apply {text="返回卡拉 OK";setOnClickListener {finish()}})
   setContentView(root)
+  if(modelFile().exists())validateAsync()
  }
- private fun configure() {
-  val prefs=getSharedPreferences("ai",MODE_PRIVATE)
-  val fields=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(24,8,24,0)}
-  val server=EditText(this).apply {
-   hint="https://your-server/separate";setSingleLine(true)
-   setText(prefs.getString("url",""))
-  }
-  val token=EditText(this).apply {
-   hint="Bearer Token";setSingleLine(true)
-   inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-   setText(prefs.getString("token",""))
-  }
-  fields.addView(server);fields.addView(token)
-  AlertDialog.Builder(this).setTitle("AI 伺服器")
-   .setMessage("本機檔案會上傳至你指定的伺服器，請確認隱私與授權。")
-   .setView(fields).setNegativeButton("取消",null)
-   .setPositiveButton("儲存") {_,_->
-    val url=server.text.toString().trim()
-    val secret=token.text.toString().trim()
-    if(!url.startsWith("https://") || secret.isEmpty()) {
-     message.text="請設定 HTTPS API 網址及 Token"
-    }else {
-     prefs.edit().putString("url",url).putString("token",secret).apply()
-     message.text="伺服器已設定，可以選擇檔案"
-    }
-   }.show()
- }
- private fun pickFile() {
-  val prefs=getSharedPreferences("ai",MODE_PRIVATE)
-  if(prefs.getString("url","").isNullOrEmpty() || prefs.getString("token","").isNullOrEmpty()) {
-   configure();return
-  }
+ private fun confirmDownload() {
   if(busy)return
-  val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-   addCategory(Intent.CATEGORY_OPENABLE);type="*/*"
-   putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("audio/*","video/*"))
-  }
-  startActivityForResult(intent,4102)
+  AlertDialog.Builder(this).setTitle("下載 AI 模型")
+   .setMessage("下載約 28 MB 的模型到手機。無須伺服器、Token，也不會上傳音樂。目前僅測試模型載入，尚未完成音訊分離。")
+   .setNegativeButton("取消",null)
+   .setPositiveButton("下載") {_,_->download()}
+   .show()
  }
- @Deprecated("Deprecated in Java")
- override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
-  super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode==4102 && resultCode==RESULT_OK) data?.data?.let {process(it)}
- }
- private fun process(uri:Uri) {
+ private fun download() {
   if(busy)return
-  busy=true;choose.isEnabled=false
-  message.text="正在上傳並執行 AI 分離，可能需要數分鐘…"
-  val prefs=getSharedPreferences("ai",MODE_PRIVATE)
-  val endpoint=prefs.getString("url","") ?: ""
-  val token=prefs.getString("token","") ?: ""
+  busy=true;action.isEnabled=false;status.text="正在下載模型…"
   Thread {
+   val partial=File(filesDir,modelName+".partial")
    var conn:HttpURLConnection?=null
    try {
-    val target=URL(endpoint)
-    require(target.protocol=="https")
-    val boundary="KaraokeAI"+System.currentTimeMillis()
-    conn=(target.openConnection() as HttpURLConnection).apply {
-     requestMethod="POST";doOutput=true
-     connectTimeout=20000;readTimeout=3600000
-     setRequestProperty("Authorization","Bearer "+token)
-     setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary)
-     setChunkedStreamingMode(1024*1024)
+    conn=URL(modelUrl).openConnection() as HttpURLConnection
+    conn.connectTimeout=20000;conn.readTimeout=60000
+    require(conn.responseCode==200) {"下載 HTTP "+conn.responseCode}
+    val length=conn.contentLengthLong
+    require(length<0 || length in 20000000L..45000000L) {"模型大小異常"}
+    var count=0L
+    conn.inputStream.use { input ->
+     partial.outputStream().use { output ->
+      val buffer=ByteArray(65536)
+      while(true) {
+       val n=input.read(buffer)
+       if(n<0)break
+       count+=n
+       require(count<=45000000L) {"模型過大"}
+       output.write(buffer,0,n)
+      }
+     }
     }
-    conn.outputStream.use { output ->
-     output.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"input\"\r\nContent-Type: application/octet-stream\r\n\r\n").toByteArray())
-     contentResolver.openInputStream(uri)?.use {it.copyTo(output)}
-      ?: error("無法讀取檔案")
-     output.write(("\r\n--"+boundary+"--\r\n").toByteArray())
-    }
-    if(conn.responseCode!=200) error("伺服器回應 HTTP "+conn.responseCode)
-    val isVideo=conn.contentType?.contains("video/")==true
-    val file=File(cacheDir,if(isVideo)"ai-result.mp4" else "ai-result.wav")
-    conn.inputStream.use {input->file.outputStream().use {input.copyTo(it)}}
-    runOnUiThread {
-     video.stopPlayback()
-     video.setVideoPath(file.absolutePath)
-     video.setOnPreparedListener {it.isLooping=false;video.start()}
-     message.text="AI 分離完成，播放純伴奏"
-    }
+    require(count>=20000000L) {"下載不完整"}
+    if(modelFile().exists())modelFile().delete()
+    require(partial.renameTo(modelFile())) {"儲存失敗"}
+    validateModel()
    }catch(e:Exception) {
-    runOnUiThread {message.text="AI 分離失敗："+(e.message ?: e.javaClass.simpleName)}
+    partial.delete()
+    runOnUiThread {status.text="下載／載入失敗："+(e.message ?: "未知錯誤")}
    }finally {
     conn?.disconnect()
-    runOnUiThread {busy=false;choose.isEnabled=true}
+    runOnUiThread {busy=false;action.isEnabled=true}
    }
   }.start()
  }
- override fun onDestroy() {video.stopPlayback();super.onDestroy()}
+ private fun validateAsync() {
+  if(busy)return
+  busy=true;action.isEnabled=false
+  Thread {
+   try {validateModel()}catch(e:Exception) {
+    runOnUiThread {status.text="模型載入失敗："+(e.message ?: "未知錯誤")}
+   }finally {runOnUiThread {busy=false;action.isEnabled=true}}
+  }.start()
+ }
+ private fun validateModel() {
+  val file=modelFile()
+  require(file.length()>=20000000L) {"模型不完整"}
+  val mapped=java.io.RandomAccessFile(file,"r").use {
+   it.channel.map(FileChannel.MapMode.READ_ONLY,0,file.length())
+  }
+  mapped.order(ByteOrder.nativeOrder())
+  Interpreter(mapped,Interpreter.Options().setNumThreads(2)).use { engine ->
+   val input=engine.getInputTensor(0).shape().joinToString(" × ")
+   val output=engine.getOutputTensor(0).shape().joinToString(" × ")
+   runOnUiThread {
+    status.text="已在手機載入真正的 AI 模型。\n輸入："+input+
+     "\n輸出："+output+
+     "\n\n尚未實作 STFT、分段推論、音訊重建；現在不能去人聲。"
+   }
+  }
+ }
 }
