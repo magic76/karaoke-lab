@@ -8,6 +8,9 @@ import android.view.View
 import android.widget.FrameLayout
 import android.view.WindowManager
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.content.Context
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -42,6 +45,22 @@ class MainActivity : Activity() {
  private var retain=15
  private var requestId=0
  private val background=Color.rgb(18,22,38)
+ private val accent=Color.rgb(41,211,208)
+ private fun shape(color:Int,radius:Int=14,stroke:Int=0):GradientDrawable =
+  GradientDrawable().apply {
+   setColor(color);cornerRadius=dp(radius).toFloat()
+   if(stroke!=0)setStroke(dp(1),stroke)
+  }
+ private fun styledButton(label:String,primary:Boolean=false)=Button(this).apply {
+  text=label;isAllCaps=false;textSize=14f
+  typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+  setTextColor(if(primary)background else Color.WHITE)
+  backgroundTintList=null
+  background=shape(if(primary)accent else Color.rgb(37,43,65),14,
+   if(primary)0 else Color.rgb(70,78,105))
+  minHeight=0;minimumHeight=0;minWidth=0;minimumWidth=0
+  setPadding(dp(12),0,dp(12),0)
+ }
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  private fun caption(value:String)=TextView(this).apply { text=value;setTextColor(Color.WHITE);textSize=14f }
  override fun onCreate(savedInstanceState:Bundle?) {
@@ -67,8 +86,11 @@ class MainActivity : Activity() {
    imeOptions=EditorInfo.IME_ACTION_GO
    setOnEditorActionListener { _,_,_ -> navigate();true }
   }
-  navigation.addView(address,LinearLayout.LayoutParams(0,dp(48),1f))
-  navigation.addView(Button(this).apply {text="前往";isAllCaps=false;setOnClickListener {navigate()}},LinearLayout.LayoutParams(dp(72),dp(48)))
+  address.background=shape(Color.rgb(33,39,61),12,Color.rgb(65,74,99))
+  address.setPadding(dp(12),0,dp(12),0)
+  navigation.addView(address,LinearLayout.LayoutParams(0,dp(46),1f))
+  navigation.addView(styledButton("前往").apply {setOnClickListener {navigate()}},
+   LinearLayout.LayoutParams(dp(68),dp(46)).apply {leftMargin=dp(6)})
   web=WebView(this).apply {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
@@ -83,13 +105,18 @@ class MainActivity : Activity() {
     }
    }
   }
-  footer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(12))}
-  toggle=Button(this).apply {text="開啟卡拉 OK";isAllCaps=false;setOnClickListener {setKaraoke(!enabled)}}
-  footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(50)))
+  footer=LinearLayout(this).apply {
+   orientation=LinearLayout.VERTICAL
+   setPadding(dp(14),dp(10),dp(14),dp(12))
+   background=shape(Color.rgb(25,30,48),18)
+  }
+  toggle=styledButton("開啟卡拉 OK",true).apply {setOnClickListener {setKaraoke(!enabled)}}
+  footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(46)))
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
   labelRow.addView(percent)
+  labelRow.setPadding(dp(4),dp(12),dp(4),dp(4))
   footer.addView(labelRow)
   slider=SeekBar(this).apply {
    max=100;progress=15
@@ -105,11 +132,10 @@ class MainActivity : Activity() {
   footer.addView(slider)
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
-  collapse=Button(this).apply {text="收起控制";isAllCaps=false;setOnClickListener {controlsOpen=false;updateControls()}}
-  handle=Button(this).apply {text="☰";isAllCaps=false;setOnClickListener {controlsOpen=true;updateControls()}}
+  collapse=styledButton("⌄  收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}}
+  handle=styledButton("♫  卡拉 OK",true).apply {setOnClickListener {controlsOpen=true;updateControls()}}
   drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
-  collapse.text="收起控制"
-  handle.text="展開卡拉 OK"
+
   var swipeStart=0f
   drawer.setOnTouchListener { _,event ->
    when(event.actionMasked) {
@@ -135,18 +161,23 @@ class MainActivity : Activity() {
   panel.removeAllViews()
   if(landscape()) {
    panel.addView(web,FrameLayout.LayoutParams(-1,-1))
-   drawer.setPadding(dp(8),dp(8),dp(8),dp(8))
-   drawer.addView(collapse,LinearLayout.LayoutParams(-1,dp(44)))
+   drawer.setPadding(dp(10),dp(10),dp(10),dp(10))
+   drawer.background=shape(Color.rgb(24,29,48),18)
+   collapse.text="收起  ›"
+   drawer.addView(collapse,LinearLayout.LayoutParams(-1,dp(40)))
    drawer.addView(navigation,LinearLayout.LayoutParams(-1,dp(56)))
    drawer.addView(footer,LinearLayout.LayoutParams(-1,-2))
    panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
-   panel.addView(handle,FrameLayout.LayoutParams(dp(56),dp(52),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
+   handle.text="♫"
+   panel.addView(handle,FrameLayout.LayoutParams(dp(48),dp(54),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
   } else {
    root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
    root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
-   root.addView(collapse,LinearLayout.LayoutParams(-1,dp(42)))
-   root.addView(handle,LinearLayout.LayoutParams(-1,dp(42)))
+   collapse.text="⌄  收起控制"
+   handle.text="♫  卡拉 OK 控制"
+   root.addView(collapse,LinearLayout.LayoutParams(-1,dp(36)))
+   root.addView(handle,LinearLayout.LayoutParams(-1,dp(40)))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
   }
   updateControls()
@@ -224,6 +255,8 @@ class MainActivity : Activity() {
     if(result.optBoolean("ok")) {
      enabled=turnOn
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
+     toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
+     toggle.setTextColor(if(enabled)Color.WHITE else background)
      status.text=if(enabled)"卡拉 OK 已啟用 · 效果依音源而異" else "已恢復原始聲音"
     }else status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
