@@ -2,6 +2,10 @@ package com.magic76.karaokelab
 
 import android.app.Activity
 import android.os.Bundle
+import android.content.res.Configuration
+import android.view.Gravity
+import android.view.View
+import android.widget.FrameLayout
 import android.view.WindowManager
 import android.graphics.Color
 import android.content.Context
@@ -26,6 +30,14 @@ class MainActivity : Activity() {
  private lateinit var toggle:Button
  private lateinit var slider:SeekBar
  private lateinit var percent:TextView
+ private lateinit var root:LinearLayout
+ private lateinit var navigation:LinearLayout
+ private lateinit var footer:LinearLayout
+ private lateinit var drawer:LinearLayout
+ private lateinit var panel:FrameLayout
+ private lateinit var collapse:Button
+ private lateinit var handle:Button
+ private var controlsOpen=true
  private var enabled=false
  private var retain=15
  private var requestId=0
@@ -38,7 +50,7 @@ class MainActivity : Activity() {
   window.navigationBarColor=background
   window.decorView.systemUiVisibility=0
   window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-  val root=LinearLayout(this).apply {
+  root=LinearLayout(this).apply {
    orientation=LinearLayout.VERTICAL
    setBackgroundColor(this@MainActivity.background)
    setOnApplyWindowInsetsListener { view,insets ->
@@ -47,7 +59,7 @@ class MainActivity : Activity() {
     insets
    }
   }
-  val navigation=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4))}
+  navigation=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4))}
   address=EditText(this).apply {
    setSingleLine(true);setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY)
    setText("https://www.youtube.com/");hint="輸入網站網址"
@@ -57,7 +69,6 @@ class MainActivity : Activity() {
   }
   navigation.addView(address,LinearLayout.LayoutParams(0,dp(48),1f))
   navigation.addView(Button(this).apply {text="前往";isAllCaps=false;setOnClickListener {navigate()}},LinearLayout.LayoutParams(dp(72),dp(48)))
-  root.addView(navigation)
   web=WebView(this).apply {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
@@ -72,8 +83,7 @@ class MainActivity : Activity() {
     }
    }
   }
-  root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
-  val footer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(12))}
+  footer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(12))}
   toggle=Button(this).apply {text="開啟卡拉 OK";isAllCaps=false;setOnClickListener {setKaraoke(!enabled)}}
   footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(50)))
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
@@ -95,9 +105,51 @@ class MainActivity : Activity() {
   footer.addView(slider)
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
-  root.addView(footer)
+  collapse=Button(this).apply {text="收起控制";isAllCaps=false;setOnClickListener {controlsOpen=false;updateControls()}}
+  handle=Button(this).apply {text="☰";isAllCaps=false;setOnClickListener {controlsOpen=true;updateControls()}}
+  drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(background)}
+  panel=FrameLayout(this)
   setContentView(root)
+  layoutForOrientation()
   web.loadUrl("https://www.youtube.com/")
+ }
+ private fun landscape()=resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE
+ private fun detach(view:View) {(view.parent as? android.view.ViewGroup)?.removeView(view)}
+ private fun layoutForOrientation() {
+  detach(navigation);detach(web);detach(footer);detach(collapse);detach(handle);detach(drawer);detach(panel)
+  root.removeAllViews()
+  drawer.removeAllViews()
+  panel.removeAllViews()
+  if(landscape()) {
+   panel.addView(web,FrameLayout.LayoutParams(-1,-1))
+   drawer.setPadding(dp(8),dp(8),dp(8),dp(8))
+   drawer.addView(collapse,LinearLayout.LayoutParams(-1,dp(44)))
+   drawer.addView(navigation,LinearLayout.LayoutParams(-1,dp(56)))
+   drawer.addView(footer,LinearLayout.LayoutParams(-1,-2))
+   panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
+   panel.addView(handle,FrameLayout.LayoutParams(dp(52),dp(52),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
+   root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
+  } else {
+   root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
+   root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
+   root.addView(handle,LinearLayout.LayoutParams(-1,dp(42)))
+   root.addView(footer,LinearLayout.LayoutParams(-1,-2))
+  }
+  updateControls()
+  root.requestApplyInsets()
+ }
+ private fun updateControls() {
+  if(landscape()) {
+   drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
+   handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
+  } else {
+   footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
+   handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
+  }
+ }
+ override fun onConfigurationChanged(newConfig:Configuration) {
+  super.onConfigurationChanged(newConfig)
+  layoutForOrientation()
  }
  private fun navigate() {
   val raw=address.text.toString().trim()
