@@ -1,12 +1,6 @@
 package com.magic76.karaokelab
 
 import android.app.Activity
-import android.Manifest
-import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
-import android.os.Handler
-import android.os.Looper
-import android.content.Intent
 import android.os.Bundle
 import android.content.res.Configuration
 import android.view.Gravity
@@ -48,13 +42,10 @@ class MainActivity : Activity() {
  private lateinit var panel:FrameLayout
  private lateinit var handle:Button
  private lateinit var fullscreen:Button
- private lateinit var qualityButton:Button
- private var qualityMode=0
- private lateinit var captureButton:Button
- private lateinit var selfTestButton:Button
- private val captureHandler=Handler(Looper.getMainLooper())
- private var captureProbeActive=false
- private val captureRefresh=object:Runnable {override fun run(){if(!captureProbeActive)return;val prefs=getSharedPreferences("capture_probe",MODE_PRIVATE);val age=System.currentTimeMillis()-prefs.getLong("timestamp",0);val rms=java.lang.Double.longBitsToDouble(prefs.getLong("rms",0));val peak=java.lang.Double.longBitsToDouble(prefs.getLong("peak",0));val error=prefs.getString("error","").orEmpty();val aiStatus=prefs.getString("ai_status","").orEmpty();val testPeak=java.lang.Double.longBitsToDouble(prefs.getLong("selftest_peak",0));val testAge=System.currentTimeMillis()-prefs.getLong("selftest_started",0);val testInfo=if(testAge in 0..12000) " / 測試峰值 %.4f".format(testPeak) else "";status.text=if(error.isNotEmpty())"音訊擷取失敗：$error" else if(age in 0..2500) "WebView 音訊擷取：RMS %.4f / Peak %.4f".format(rms,peak)+testInfo else "等待 WebView 音訊（可能不允許擷取）";if(aiStatus.isNotEmpty())status.text=status.text.toString()+"\n"+aiStatus;captureHandler.postDelayed(this,700)}}
+ private lateinit var bassSlider:SeekBar
+ private lateinit var volumeSlider:SeekBar
+ private lateinit var bassPercent:TextView
+ private lateinit var volumePercent:TextView
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -63,6 +54,8 @@ class MainActivity : Activity() {
  private var controlsOpen=true
  private var enabled=false
  private var retain=15
+ private var bass=75
+ private var volume=100
  private var requestId=0
  private val background=Color.rgb(18,22,38)
  private val accent=Color.rgb(41,211,208)
@@ -148,56 +141,40 @@ class MainActivity : Activity() {
   mainRow.addView(toggle,LinearLayout.LayoutParams(0,dp(44),1f))
   fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation() }}
   mainRow.addView(fullscreen,LinearLayout.LayoutParams(0,dp(44),1f).apply {leftMargin=dp(8)})
-  qualityButton=styledButton("音質模式：標準").apply {
-   setOnClickListener {
-    qualityMode=(qualityMode+1)%2
-    text=when(qualityMode) {
-     1 -> "音質模式：保留低頻"
-     else -> "音質模式：標準"
-    }
-    if(enabled)setKaraoke(true)
+  fun addControl(label:String,initial:Int,onValue:(Int)->Unit):Pair<SeekBar,TextView> {
+   val row=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(4),dp(7),dp(4),0)}
+   row.addView(caption(label),LinearLayout.LayoutParams(0,-2,1f))
+   val value=caption("$initial%")
+   row.addView(value)
+   footer.addView(row)
+   val bar=SeekBar(this).apply {
+    max=100;progress=initial
+    setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
+     override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean) {
+      value.text="$progress%"
+      if(fromUser)onValue(progress)
+     }
+     override fun onStartTrackingTouch(bar:SeekBar?) {}
+     override fun onStopTrackingTouch(bar:SeekBar?) {}
+    })
    }
+   footer.addView(bar,LinearLayout.LayoutParams(-1,dp(36)))
+   return bar to value
   }
-  val audioRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
-  footer.addView(audioRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
-  audioRow.addView(qualityButton,LinearLayout.LayoutParams(0,dp(40),1f))
-  captureButton=styledButton("檢測 WebView 音訊擷取").apply {setOnClickListener {if(captureProbeActive)stopCaptureProbe() else startCaptureProbe()}}
-  audioRow.addView(captureButton,LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
-  selfTestButton=styledButton("播放 3 秒測試音（檢查擷取）").apply {setOnClickListener {
-   if(!captureProbeActive) {status.text="請先啟動 WebView 音訊擷取檢測";return@setOnClickListener}
-   getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putLong("selftest_peak",0).apply()
-   startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.SELF_TEST))
-  }}
-  val testRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
-  footer.addView(testRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
-  selfTestButton.text="3 秒測試音"
-  testRow.addView(selfTestButton,LinearLayout.LayoutParams(0,dp(40),1f))
-  testRow.addView(styledButton("AI 模型設定").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java).putExtra("webview_only",true))}},LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
-  val aiRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
-  footer.addView(aiRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
-  aiRow.addView(styledButton("AI 分析 7 秒").apply {setOnClickListener {
-   if(!captureProbeActive){status.text="請先啟動音訊擷取";return@setOnClickListener}
-   startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.AI_PROBE))
-  }},LinearLayout.LayoutParams(0,dp(40),1f))
-  aiRow.addView(styledButton("收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}},LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
-  val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
-  labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
-  percent=caption("15%")
-  labelRow.addView(percent)
-  labelRow.setPadding(dp(4),dp(12),dp(4),dp(4))
-  footer.addView(labelRow)
-  slider=SeekBar(this).apply {
-   max=100;progress=15
-   setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
-    override fun onProgressChanged(bar:SeekBar?,value:Int,fromUser:Boolean) {
-     retain=value;percent.text="$value%"
-     if(enabled && fromUser)setKaraoke(true)
-    }
-    override fun onStartTrackingTouch(bar:SeekBar?) {}
-    override fun onStopTrackingTouch(bar:SeekBar?) {}
-   })
+  val vocalControl=addControl("人聲消除強度",85) {value->
+   retain=100-value
+   if(enabled)setKaraoke(true)
   }
-  footer.addView(slider)
+  slider=vocalControl.first
+  percent=vocalControl.second
+  val bassControl=addControl("低音保留",bass) {value->bass=value;if(enabled)setKaraoke(true)}
+  bassSlider=bassControl.first
+  bassPercent=bassControl.second
+  val volumeControl=addControl("輸出音量",volume) {value->volume=value;if(enabled)setKaraoke(true)}
+  volumeSlider=volumeControl.first
+  volumePercent=volumeControl.second
+  footer.addView(styledButton("收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}},
+   LinearLayout.LayoutParams(-1,dp(38)).apply {topMargin=dp(4)})
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
   handle=styledButton("♫  卡拉 OK",true)
@@ -351,58 +328,62 @@ class MainActivity : Activity() {
  }
  private fun setKaraoke(turnOn:Boolean) {
   val id=++requestId
-  val dry=if(turnOn)retain/100.0 else 1.0
-  val wet=if(turnOn)1.0-retain/100.0 else 0.0
-  val quality=qualityMode
+  val strength=if(turnOn)(100-retain)/100.0 else 0.0
+  val bassAmount=bass/100.0
+  val output=volume/100.0
   val script="""(function(){
    try {
-    var media=Array.from(document.querySelectorAll('video,audio'));
+    const media=Array.from(document.querySelectorAll('video,audio'));
     if(!media.length)return JSON.stringify({ok:false,reason:'no-accessible-media'});
-    var states=window.__karaokeStates||(window.__karaokeStates=new Map());
-    var changed=0,errors=[];
-    media.forEach(function(v){
+    const states=window.__karaokeStates||(window.__karaokeStates=new Map());
+    let changed=0;const errors=[];
+    for(const v of media) {
      try {
-      var k=states.get(v);
+      let k=states.get(v);
       if(!k) {
-       var ctx=new (window.AudioContext||window.webkitAudioContext)();
-       var src=ctx.createMediaElementSource(v);
-       var split=ctx.createChannelSplitter(2);
-       var merge=ctx.createChannelMerger(2);
-       var original=ctx.createGain(),processed=ctx.createGain();
-       original.gain.value=0;processed.gain.value=0;
-       src.connect(original);original.connect(ctx.destination);
+       const ctx=new (window.AudioContext||window.webkitAudioContext)();
+       const src=ctx.createMediaElementSource(v);
+       const split=ctx.createChannelSplitter(2),merge=ctx.createChannelMerger(2);
        src.connect(split);
-       [[0,0,0.5],[1,0,-0.5],[1,1,0.5],[0,1,-0.5]].forEach(function(t){
-        var gain=ctx.createGain();gain.gain.value=t[2];
-        split.connect(gain,t[0]);gain.connect(merge,0,t[1]);
+       // Mid/side: S=(L-R)/2. The side signal removes centered vocals
+       // but also removes centered instruments. This is not source separation.
+       [[0,0,.5],[1,0,-.5],[0,1,.5],[1,1,-.5]].forEach(function(t){
+        const g=ctx.createGain();g.gain.value=t[2];
+        split.connect(g,t[0]);g.connect(merge,0,t[1]);
        });
-       merge.connect(processed);processed.connect(ctx.destination);
-       // DSP v2: preserve centered bass from the original mix while
-       // applying center cancellation above the crossover frequency.
-       // High-pass the processed stereo difference, low-pass the original.
-       var low=ctx.createBiquadFilter();
-       low.type='lowpass';low.frequency.value=180;low.Q.value=0.707;
-       var high=ctx.createBiquadFilter();
-       high.type='highpass';high.frequency.value=180;high.Q.value=0.707;
-       var bass=ctx.createGain(),highProcessed=ctx.createGain();
-       bass.gain.value=0;highProcessed.gain.value=0;
-       src.connect(low);low.connect(bass);bass.connect(ctx.destination);
-       merge.connect(high);high.connect(highProcessed);highProcessed.connect(ctx.destination);
-       k={ctx:ctx,original:original,processed:processed,bass:bass,highProcessed:highProcessed};
+       const sideLow=ctx.createBiquadFilter(),sideHigh=ctx.createBiquadFilter();
+       const originalLow=ctx.createBiquadFilter(),originalHigh=ctx.createBiquadFilter();
+       for(const f of [sideLow,originalLow]){f.type='lowpass';f.frequency.value=180;f.Q.value=.707;}
+       for(const f of [sideHigh,originalHigh]){f.type='highpass';f.frequency.value=180;f.Q.value=.707;}
+       const dry=ctx.createGain(),wet=ctx.createGain();
+       const lowOriginal=ctx.createGain(),lowSide=ctx.createGain();
+       const out=ctx.createGain();
+       // All paths feed a single output gain to prevent accidental double volume.
+       src.connect(originalHigh);originalHigh.connect(dry);dry.connect(out);
+       merge.connect(sideHigh);sideHigh.connect(wet);wet.connect(out);
+       src.connect(originalLow);originalLow.connect(lowOriginal);lowOriginal.connect(out);
+       merge.connect(sideLow);sideLow.connect(lowSide);lowSide.connect(out);
+       out.connect(ctx.destination);
+       k={ctx,dry,wet,lowOriginal,lowSide,out};
        states.set(v,k);
       }
-      var quality=__QUALITY__;
-      k.original.gain.setTargetAtTime(__DRY__,k.ctx.currentTime,0.03);
-      k.processed.gain.setTargetAtTime(quality===0?__WET__:0,k.ctx.currentTime,0.03);
-      k.bass.gain.setTargetAtTime(quality===1?__WET__:0,k.ctx.currentTime,0.03);
-      k.highProcessed.gain.setTargetAtTime(quality===1?__WET__:0,k.ctx.currentTime,0.03);
+      const t=k.ctx.currentTime,alpha=.035;
+      const strength=__STRENGTH__,bass=__BASS__,volume=__VOLUME__;
+      // Above 180Hz crossfade original with side signal.
+      // Below 180Hz retain the center according to the bass slider.
+      // Smooth all changes to avoid clicks.
+      k.dry.gain.setTargetAtTime(1-strength,t,alpha);
+      k.wet.gain.setTargetAtTime(strength,t,alpha);
+      k.lowOriginal.gain.setTargetAtTime(1-strength+strength*bass,t,alpha);
+      k.lowSide.gain.setTargetAtTime(strength*(1-bass),t,alpha);
+      k.out.gain.setTargetAtTime(Math.min(1,volume),t,alpha);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
-    });
-    return JSON.stringify({ok:changed>0,changed:changed,total:media.length,errors:errors.slice(0,2)});
+    }
+    return JSON.stringify({ok:changed>0,changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__DRY__",dry.toString()).replace("__WET__",wet.toString()).replace("__QUALITY__",quality.toString())
-  web.evaluateJavascript(script) { raw ->
+  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString())
+  web.evaluateJavascript(script) {raw->
    if(id!=requestId)return@evaluateJavascript
    try {
     val result=JSONObject(org.json.JSONTokener(raw).nextValue() as String)
@@ -411,39 +392,14 @@ class MainActivity : Activity() {
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
      toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
      toggle.setTextColor(if(enabled)Color.WHITE else background)
-     status.text=if(enabled)when(qualityMode) { 1 -> "保留低頻模式 · 效果依音源而異"; else -> "標準模式 · 效果依音源而異" } else "已恢復原始聲音"
-    }else status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
+     status.text=if(enabled)"DSP 已套用 · 效果依歌曲立體聲混音而異" else "已恢復原始聲音"
+    } else {
+     enabled=false
+     toggle.text="開啟卡拉 OK"
+     status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
+    }
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
   }
- }
- private fun startCaptureProbe() {
-  if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
-   requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO),4205);return
-  }
-  val manager=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-  startActivityForResult(manager.createScreenCaptureIntent(),4206)
- }
- private fun stopCaptureProbe() {
-  captureProbeActive=false;captureHandler.removeCallbacks(captureRefresh)
-  startService(Intent(this,CaptureService::class.java).setAction(CaptureService.STOP))
-  captureButton.text="檢測 WebView 音訊擷取"
-  status.text="已停止音訊擷取測試"
- }
- override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
-  super.onRequestPermissionsResult(requestCode,permissions,grantResults)
-  if(requestCode==4205) {if(grantResults.firstOrNull()==PackageManager.PERMISSION_GRANTED)startCaptureProbe() else status.text="需要錄音權限才能檢測播放音訊"}
- }
- @Deprecated("Deprecated in Java")
- override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
-  super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode!=4206)return
-  if(resultCode!=RESULT_OK || data==null){status.text="未授權音訊擷取";return}
-  getSharedPreferences("capture_probe",MODE_PRIVATE).edit().clear().apply()
-  try {
-   startForegroundService(Intent(this,CaptureService::class.java).setAction(CaptureService.START).putExtra(CaptureService.CODE,resultCode).putExtra(CaptureService.DATA,data))
-   captureProbeActive=true;captureButton.text="停止 WebView 音訊檢測"
-   captureHandler.post(captureRefresh)
-  }catch(e:Exception){status.text="啟動擷取失敗："+e.message}
  }
  @Deprecated("Deprecated in Java")
  override fun onBackPressed() {
@@ -454,5 +410,5 @@ class MainActivity : Activity() {
    else -> super.onBackPressed()
   }
  }
- override fun onDestroy() {if(captureProbeActive)stopCaptureProbe();closeCustomVideo();web.destroy();super.onDestroy()}
+ override fun onDestroy() {closeCustomVideo();web.destroy();super.onDestroy()}
 }
