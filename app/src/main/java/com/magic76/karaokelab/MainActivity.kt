@@ -107,7 +107,7 @@ class MainActivity : Activity() {
   footer.addView(status)
   collapse=Button(this).apply {text="收起控制";isAllCaps=false;setOnClickListener {controlsOpen=false;updateControls()}}
   handle=Button(this).apply {text="☰";isAllCaps=false;setOnClickListener {controlsOpen=true;updateControls()}}
-  drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(background)}
+  drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
   collapse.text="收起控制"
   handle.text="展開卡拉 OK"
   var swipeStart=0f
