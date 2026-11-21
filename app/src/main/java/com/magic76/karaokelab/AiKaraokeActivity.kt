@@ -3,6 +3,8 @@ package com.magic76.karaokelab
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.widget.*
 import org.tensorflow.lite.Interpreter
@@ -34,9 +36,65 @@ class AiKaraokeActivity:Activity() {
   root.addView(status)
   action=Button(this).apply {text="下載／驗證本機 AI 模型";setOnClickListener {confirmDownload()}}
   root.addView(action)
+  root.addView(Button(this).apply {text="匯入已下載模型";setOnClickListener {pickModel()}})
   root.addView(Button(this).apply {text="返回卡拉 OK";setOnClickListener {finish()}})
   setContentView(root)
   if(modelFile().exists())validateAsync()
+ }
+
+ private fun pickModel() {
+  if(busy)return
+  startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+   addCategory(Intent.CATEGORY_OPENABLE)
+   type="*/*"
+  },4203)
+ }
+ @Deprecated("Deprecated in Java")
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==4203 && resultCode==RESULT_OK) data?.data?.let {importModel(it)}
+ }
+ private fun importModel(uri:Uri) {
+  if(busy)return
+  busy=true;action.isEnabled=false;status.text="正在匯入模型…"
+  Thread {
+   val temp=File(filesDir,modelName+".import")
+   try {
+    var count=0L
+    contentResolver.openInputStream(uri)?.use { input ->
+     temp.outputStream().use { output ->
+      val buffer=ByteArray(65536)
+      while(true) {
+       val n=input.read(buffer)
+       if(n<0)break
+       count+=n
+       require(count<=45000000L) {"檔案過大"}
+       output.write(buffer,0,n)
+      }
+     }
+    } ?: error("無法讀取檔案")
+    require(count>=20000000L) {"模型檔案不完整"}
+    val digest=java.security.MessageDigest.getInstance("SHA-256")
+    temp.inputStream().use { input ->
+     val buffer=ByteArray(65536)
+     while(true) {
+      val n=input.read(buffer)
+      if(n<0)break
+      digest.update(buffer,0,n)
+     }
+    }
+    val sha=digest.digest().joinToString("") {"%02x".format(it)}
+    require(sha=="2a07e11db13a11ca4900a54b4a316ef67931e993a6a3d19444bccbbeb9b445ee") {"SHA-256 不符"}
+    if(modelFile().exists())modelFile().delete()
+    require(temp.renameTo(modelFile())) {"無法儲存模型"}
+    validateModel()
+   }catch(e:Exception) {
+    temp.delete()
+    runOnUiThread {status.text="匯入失敗："+(e.message ?: "未知錯誤")}
+   }finally {
+    runOnUiThread {busy=false;action.isEnabled=true}
+   }
+  }.start()
  }
  private fun confirmDownload() {
   if(busy)return
