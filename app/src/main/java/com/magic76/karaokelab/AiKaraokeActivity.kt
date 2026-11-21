@@ -5,6 +5,8 @@ import ai.onnxruntime.OrtSession
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.widget.*
 import java.io.File
@@ -51,6 +53,7 @@ class AiKaraokeActivity : Activity() {
    setOnClickListener {confirmDownload()}
   }
   root.addView(action)
+  root.addView(Button(this).apply {text="選擇本機歌曲 · 測試解碼";setOnClickListener {pickAudio()}})
   root.addView(Button(this).apply {
    text="返回卡拉 OK"
    setOnClickListener {finish()}
@@ -59,6 +62,32 @@ class AiKaraokeActivity : Activity() {
   if(modelFile().exists()) validateAsync()
  }
 
+
+ private fun pickAudio() {
+  if(busy)return
+  startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+   addCategory(Intent.CATEGORY_OPENABLE)
+   type="*/*"
+   putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("audio/*","video/*"))
+  },4204)
+ }
+ @Deprecated("Deprecated in Java")
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==4204 && resultCode==RESULT_OK)data?.data?.let {decodeAudio(it)}
+ }
+ private fun decodeAudio(uri:Uri) {
+  if(busy)return
+  busy=true;action.isEnabled=false;status.text="解碼中…"
+  Thread {
+   try {
+    val result=LocalAudioDecoder.decode(this,uri,File(cacheDir,"ai-source.pcm"))
+    runOnUiThread {status.text="本機音訊解碼完成："+result.frames+" frames，44.1 kHz 雙聲道。AI 推論與伴奏輸出尚未完成。"}
+   }catch(e:Exception) {
+    runOnUiThread {status.text="解碼失敗："+(e.message ?: "未知錯誤")}
+   }finally {runOnUiThread {busy=false;action.isEnabled=true}}
+  }.start()
+ }
  private fun confirmDownload() {
   if(busy)return
   AlertDialog.Builder(this)
