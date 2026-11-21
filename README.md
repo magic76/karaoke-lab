@@ -72,3 +72,40 @@ The former Android server/token/upload screen has been replaced by an **on-devic
 Model source: https://huggingface.co/gyoom-sa/UVR-MDX-LiteRT (MIT-licensed repository). Model download requires internet once. The previous `tools/ai_server.py` remains a legacy standalone experiment but is not used by the Android screen.
 
 **Validation pending:** Gradle build, on-device interpreter initialization and actual separation quality.
+
+## v0.21 ONNX on-device foundation (experimental PR)
+
+The earlier Hugging Face LiteRT URL returned 401/404. The Android model test now uses the public MDX-NET 3_9662 ONNX asset referenced by Murem's upstream `android/app/src/main/assets/models.json`:
+
+- Model: `UVR_MDXNET_3_9662.onnx`
+- Release: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR_MDXNET_3_9662.onnx
+- Exact size: 29,704,436 bytes
+- SHA-256: `e02220e80d8253f4c2209f8924298b2b686bbdf2868b788ff5500fb9bd94aadc`
+- Android runtime: ONNX Runtime 1.31.1
+- Upstream reference: https://github.com/Ignema/youtube-music-remover (MIT application code)
+
+**This is a foundation only.** The UI validates model download and ONNX Runtime session creation. It does not yet perform AI separation on songs. A functional pipeline requires audio decoding/resampling, MDX-NET STFT, tiled inference, overlap-add iSTFT, instrumental reconstruction, and playback/video synchronization. YouTube WebView audio is not directly available for guaranteed replacement. No claim of functional AI karaoke should be made until those components and actual device tests pass.
+
+The old `tools/ai_server.py` remains in the repository as an unused legacy experiment and is not called by the Android AI screen.
+
+## Additional implementation in PR #1
+
+- Added Android Storage Access Framework picker for local audio/video.
+- Added `LocalAudioDecoder` using MediaExtractor and MediaCodec to write interleaved stereo float32 PCM.
+- The first slice explicitly supports only 44.1 kHz mono/stereo input and reports unsupported sample rates/codecs.
+- The UI reports decoded frame counts and **does not claim vocals were removed**.
+
+**Still unimplemented:** MDX-Net STFT/iSTFT, inference over actual PCM, instrumental subtraction, WAV/MP4 export, and playback synchronization. This PR is not production-ready. Compilation and real-device tests remain outstanding.
+
+## Experimental local AI vocal separation (PR #1, not device-tested)
+
+The local-file pipeline now includes:
+
+1. Android MediaCodec extraction to 44.1kHz stereo float PCM (currently rejects other sample rates).
+2. Mixed-radix FFT, MDX STFT/iSTFT, tiled ONNX inference with overlap-add.
+3. Vocal-stem compensation and subtraction from the original mix.
+4. 16-bit stereo WAV output in app cache and MediaPlayer preview.
+
+The FFT/STFT/separator source is adapted from Murem under its MIT license; see `THIRD_PARTY_MUREM_LICENSE.txt`.
+
+**Unverified:** APK compile, model download availability, exact ONNX runtime tensor compatibility, real-device quality, performance, storage usage, and audio synchronization. This path operates on locally selected files only; it does not capture or replace protected YouTube WebView playback audio. Do not merge or publish as a working AI karaoke feature before testing.
