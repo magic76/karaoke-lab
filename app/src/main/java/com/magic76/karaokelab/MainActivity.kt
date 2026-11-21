@@ -344,6 +344,7 @@ class MainActivity : Activity() {
        const ctx=new (window.AudioContext||window.webkitAudioContext)();
        const src=ctx.createMediaElementSource(v);
        const split=ctx.createChannelSplitter(2),merge=ctx.createChannelMerger(2);
+       src.connect(split);
        // Mid/side: S=(L-R)/2. The side signal removes centered vocals
        // but also removes centered instruments. This is not source separation.
        [[0,0,.5],[1,0,-.5],[0,1,.5],[1,1,-.5]].forEach(function(t){
