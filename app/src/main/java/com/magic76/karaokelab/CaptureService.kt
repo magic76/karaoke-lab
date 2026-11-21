@@ -8,7 +8,7 @@ import android.os.*
 import android.util.Log
 import kotlin.math.*
 class CaptureService:Service() {
- companion object { const val START="capture.start"; const val STOP="capture.stop"; const val CODE="code"; const val DATA="data"; const val SELF_TEST="capture.selftest" }
+ companion object { const val START="capture.start"; const val STOP="capture.stop"; const val CODE="code"; const val DATA="data"; const val SELF_TEST="capture.selftest"; const val AI_PROBE="capture.ai_probe" }
  private var projection:MediaProjection?=null
  private var recorder:AudioRecord?=null
  private var testPlayer:AudioTrack?=null
@@ -16,6 +16,8 @@ class CaptureService:Service() {
  @Volatile private var testRunning=false
  private var thread:Thread?=null
  @Volatile private var running=false
+ @Volatile private var aiRequested=false
+ @Volatile private var aiBusy=false
  override fun onBind(intent:Intent?):IBinder?=null
  override fun onCreate() {
   super.onCreate()
@@ -23,6 +25,13 @@ class CaptureService:Service() {
  }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   if(intent?.action==STOP) { stopSelf(); return START_NOT_STICKY }
+  if(intent?.action==AI_PROBE) {
+   if(running && !aiBusy) {
+    aiRequested=true
+    getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status","等待擷取 7 秒 WebView 音訊…").apply()
+   } else getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status","請先啟動擷取，或等待上一次處理完成").apply()
+   return START_NOT_STICKY
+  }
   if(intent?.action==SELF_TEST) { if(running)startSelfTest() else getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","擷取尚未啟動，無法測試").apply(); return START_NOT_STICKY }
   if(intent?.action!=START || running) return START_NOT_STICKY
   val note=Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Karaoke Lab").setContentText("Analyzing capture level; no audio saved").build()
@@ -42,9 +51,36 @@ class CaptureService:Service() {
    getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("error","").apply()
    thread=Thread {
     val samples=ShortArray(4800)
+    var aiSamples:ShortArray?=null
+    var aiOffset=0
     while(running) {
      val count=recorder?.read(samples,0,samples.size)?:break
      if(count>0) {
+      if(aiRequested && aiSamples==null && !aiBusy) {
+       aiRequested=false;aiBusy=true
+       aiSamples=ShortArray(WebCaptureAiProbe.TARGET_FRAMES*2)
+       aiOffset=0
+      }
+      val dest=aiSamples
+      if(dest!=null) {
+       val copied=minOf(count,dest.size-aiOffset)
+       System.arraycopy(samples,0,dest,aiOffset,copied)
+       aiOffset+=copied
+       if(aiOffset>=dest.size) {
+        aiSamples=null
+        getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status","已取得 7 秒 PCM，AI 處理中…").apply()
+        Thread {
+         try {
+          val result=WebCaptureAiProbe.process(this@CaptureService,dest,aiOffset/2) {message->
+           getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status",message).apply()
+          }
+          getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status",result).apply()
+         }catch(e:Exception) {
+          getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putString("ai_status","AI 處理失敗："+(e.message ?: e.javaClass.simpleName)).apply()
+         }finally {aiBusy=false}
+        }.start()
+       }
+      }
       var sum=0.0; var peak=0
       for(i in 0 until count) { val v=samples[i].toInt(); sum+=v.toDouble()*v; peak=max(peak,abs(v)) }
       val rms=sqrt(sum/count)/32768.0
