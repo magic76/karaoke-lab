@@ -41,6 +41,9 @@ class MainActivity : Activity() {
  private lateinit var drawer:LinearLayout
  private lateinit var panel:FrameLayout
  private lateinit var handle:Button
+ private lateinit var quickRow:LinearLayout
+ private lateinit var quickToggle:Button
+ private lateinit var quickFullscreen:Button
  private lateinit var fullscreen:Button
  private lateinit var bassSlider:SeekBar
  private lateinit var volumeSlider:SeekBar
@@ -53,7 +56,7 @@ class MainActivity : Activity() {
  private var floatXFraction=1f
  private var controlsOpen=true
  private var enabled=false
- private var retain=15
+ private var retain=0
  private var bass=75
  private var volume=100
  private var requestId=0
@@ -126,6 +129,7 @@ class MainActivity : Activity() {
      requestId++
      enabled=false
      toggle.text="開啟卡拉 OK"
+     quickToggle.text="開啟卡拉 OK"
      status.text="播放音樂後，可開啟卡拉 OK 模式"
     }
    }
@@ -161,7 +165,7 @@ class MainActivity : Activity() {
    footer.addView(bar,LinearLayout.LayoutParams(-1,dp(36)))
    return bar to value
   }
-  val vocalControl=addControl("人聲消除強度",85) {value->
+  val vocalControl=addControl("人聲消除強度",100) {value->
    retain=100-value
    if(enabled)setKaraoke(true)
   }
@@ -178,6 +182,11 @@ class MainActivity : Activity() {
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
   handle=styledButton("♫  卡拉 OK",true)
+  quickRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(3),dp(3),dp(3),dp(3));background=shape(Color.rgb(25,30,48),14)}
+  quickToggle=styledButton("開啟卡拉 OK",true).apply {textSize=12f;setOnClickListener {setKaraoke(!enabled)}}
+  quickFullscreen=styledButton("⛶ 全螢幕").apply {textSize=12f;setOnClickListener {immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation()}}
+  quickRow.addView(quickToggle,LinearLayout.LayoutParams(0,dp(40),1f))
+  quickRow.addView(quickFullscreen,LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(5)})
   drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
 
   var swipeStart=0f
@@ -240,7 +249,7 @@ class MainActivity : Activity() {
  private fun landscape()=resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE
  private fun detach(view:View) {(view.parent as? android.view.ViewGroup)?.removeView(view)}
  private fun layoutForOrientation() {
-  detach(navigation);detach(web);detach(footer);detach(handle);detach(drawer);detach(panel)
+  detach(navigation);detach(web);detach(footer);detach(handle);detach(quickRow);detach(drawer);detach(panel)
   root.removeAllViews()
   drawer.removeAllViews()
   panel.removeAllViews()
@@ -253,6 +262,7 @@ class MainActivity : Activity() {
    panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
    handle.text="♫"
    panel.addView(handle,FrameLayout.LayoutParams(dp(54),dp(54),Gravity.TOP or Gravity.LEFT))
+   panel.addView(quickRow,FrameLayout.LayoutParams(dp(248),dp(48),Gravity.TOP or Gravity.RIGHT).apply {topMargin=dp(10);rightMargin=dp(10)})
    panel.post {
     val maxX=(panel.width-handle.width).coerceAtLeast(0).toFloat()
     val maxY=(panel.height-handle.height).coerceAtLeast(0).toFloat()
@@ -268,6 +278,7 @@ class MainActivity : Activity() {
     rightMargin=dp(12)
     bottomMargin=dp(12)
    })
+   panel.addView(quickRow,FrameLayout.LayoutParams(dp(248),dp(48),Gravity.TOP or Gravity.RIGHT).apply {topMargin=dp(8);rightMargin=dp(8)})
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
   }
@@ -277,11 +288,13 @@ class MainActivity : Activity() {
  }
  private fun updateControls() {
   handle.visibility=View.VISIBLE
+  quickRow.visibility=if(controlsOpen)View.GONE else View.VISIBLE
   if(landscape()) {
    navigation.visibility=View.VISIBLE
    drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
    handle.text=if(controlsOpen)"×" else "♫"
    handle.contentDescription=if(controlsOpen)"收起卡拉 OK 控制" else "展開卡拉 OK 控制"
+   quickRow.bringToFront()
    handle.bringToFront()
   } else {
    navigation.visibility=if(immersive)View.GONE else View.VISIBLE
@@ -289,6 +302,7 @@ class MainActivity : Activity() {
    handle.visibility=View.VISIBLE
    handle.text=if(controlsOpen)"⌄  收起控制" else "♫  卡拉 OK"
    handle.contentDescription=handle.text
+   quickRow.bringToFront()
   }
  }
  override fun onConfigurationChanged(newConfig:Configuration) {
@@ -302,6 +316,7 @@ class MainActivity : Activity() {
    (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
    else 0
   fullscreen.text=if(immersive)"⛶  離開全螢幕" else "⛶  全螢幕"
+  quickFullscreen.text=if(immersive)"⛶ 離開全螢幕" else "⛶ 全螢幕"
  }
  private fun closeCustomVideo() {
   val view=customVideo ?: return
@@ -321,7 +336,7 @@ class MainActivity : Activity() {
    status.text="請輸入有效的 HTTP/HTTPS 網址";return
   }
   requestId++
-  enabled=false;toggle.text="開啟卡拉 OK"
+  enabled=false;toggle.text="開啟卡拉 OK";quickToggle.text="開啟卡拉 OK"
   web.loadUrl(target)
   (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken,0)
   address.clearFocus()
@@ -347,7 +362,7 @@ class MainActivity : Activity() {
        src.connect(split);
        // Mid/side: S=(L-R)/2. The side signal removes centered vocals
        // but also removes centered instruments. This is not source separation.
-       [[0,0,.5],[1,0,-.5],[0,1,.5],[1,1,-.5]].forEach(function(t){
+       [[0,0,1],[1,0,-1],[1,1,1],[0,1,-1]].forEach(function(t){
         const g=ctx.createGain();g.gain.value=t[2];
         split.connect(g,t[0]);g.connect(merge,0,t[1]);
        });
@@ -390,12 +405,14 @@ class MainActivity : Activity() {
     if(result.optBoolean("ok")) {
      enabled=turnOn
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
+     quickToggle.text=toggle.text
      toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
      toggle.setTextColor(if(enabled)Color.WHITE else background)
      status.text=if(enabled)"DSP 已套用 · 效果依歌曲立體聲混音而異" else "已恢復原始聲音"
     } else {
      enabled=false
      toggle.text="開啟卡拉 OK"
+     quickToggle.text=toggle.text
      status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
     }
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
