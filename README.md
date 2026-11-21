@@ -27,3 +27,22 @@ This demonstrates separate control of source volume and processed output in a **
 ## Build
 
 Android SDK 35, JDK 17, Gradle 8.9. Run `gradle :app:assembleDebug` locally.
+
+## AI vocal separation experiment (offline, local files)
+
+This is a **real Demucs inference test**, separate from the Android WebView playback path. It does not claim to remove vocals from YouTube in real time. Use only media you own or are authorized to process.
+
+Prerequisites: Python 3.10+ (compatible PyTorch environment), ffmpeg and ffprobe in PATH, and free disk space for downloaded model weights and uncompressed audio. On a Mac with Intel CPU, start with CPU inference; it can be slow.
+
+```bash
+python3 -m pip install demucs
+python3 tools/ai_separate.py /path/to/authorized-song.mp4 --output-dir ai-output
+```
+
+Outputs:
+- `ai-output/htdemucs/input-audio/no_vocals.wav`: AI-separated instrumental
+- `ai-output/htdemucs/input-audio/vocals.wav`: AI-separated vocals
+- `ai-output/authorized-song-ai-karaoke.mp4`: original video stream with instrumental audio (when source has video)
+
+The first invocation may download model weights. This experiment processes the full file offline, and may take substantially longer than the media duration on CPU. There is no automatic YouTube stream capture, DRM bypass, or WebView audio replacement. Audio/video synchronization and separation artifacts must be tested on actual samples before Android integration.
+
