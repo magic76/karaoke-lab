@@ -148,7 +148,7 @@ class MainActivity : Activity() {
    }
   }
   footer.addView(qualityButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
-  footer.addView(styledButton("AI 去人聲（本機檔案）").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java))}},LinearLayout.LayoutParams(-1,dp(42)).apply {topMargin=dp(8)})
+  footer.addView(styledButton("AI 模型測試（手機端）").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java))}},LinearLayout.LayoutParams(-1,dp(42)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
