@@ -108,6 +108,19 @@ class MainActivity : Activity() {
   collapse=Button(this).apply {text="收起控制";isAllCaps=false;setOnClickListener {controlsOpen=false;updateControls()}}
   handle=Button(this).apply {text="☰";isAllCaps=false;setOnClickListener {controlsOpen=true;updateControls()}}
   drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(background)}
+  collapse.text="收起控制"
+  handle.text="展開卡拉 OK"
+  var swipeStart=0f
+  drawer.setOnTouchListener { _,event ->
+   when(event.actionMasked) {
+    android.view.MotionEvent.ACTION_DOWN -> {swipeStart=event.rawX;true}
+    android.view.MotionEvent.ACTION_UP -> {
+     if(event.rawX-swipeStart>dp(65) && landscape()) {controlsOpen=false;updateControls()}
+     true
+    }
+    else -> true
+   }
+  }
   panel=FrameLayout(this)
   setContentView(root)
   layoutForOrientation()
@@ -127,11 +140,12 @@ class MainActivity : Activity() {
    drawer.addView(navigation,LinearLayout.LayoutParams(-1,dp(56)))
    drawer.addView(footer,LinearLayout.LayoutParams(-1,-2))
    panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
-   panel.addView(handle,FrameLayout.LayoutParams(dp(52),dp(52),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
+   panel.addView(handle,FrameLayout.LayoutParams(dp(56),dp(52),Gravity.RIGHT or Gravity.CENTER_VERTICAL))
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
   } else {
    root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
    root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
+   root.addView(collapse,LinearLayout.LayoutParams(-1,dp(42)))
    root.addView(handle,LinearLayout.LayoutParams(-1,dp(42)))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
   }
@@ -140,11 +154,13 @@ class MainActivity : Activity() {
  }
  private fun updateControls() {
   if(landscape()) {
+   collapse.visibility=View.VISIBLE
    drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
    handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
   } else {
    footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
    handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
+   collapse.visibility=if(controlsOpen)View.VISIBLE else View.GONE
   }
  }
  override fun onConfigurationChanged(newConfig:Configuration) {
