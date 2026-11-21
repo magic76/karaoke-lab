@@ -87,3 +87,12 @@ The earlier Hugging Face LiteRT URL returned 401/404. The Android model test now
 **This is a foundation only.** The UI validates model download and ONNX Runtime session creation. It does not yet perform AI separation on songs. A functional pipeline requires audio decoding/resampling, MDX-NET STFT, tiled inference, overlap-add iSTFT, instrumental reconstruction, and playback/video synchronization. YouTube WebView audio is not directly available for guaranteed replacement. No claim of functional AI karaoke should be made until those components and actual device tests pass.
 
 The old `tools/ai_server.py` remains in the repository as an unused legacy experiment and is not called by the Android AI screen.
+
+## Additional implementation in PR #1
+
+- Added Android Storage Access Framework picker for local audio/video.
+- Added `LocalAudioDecoder` using MediaExtractor and MediaCodec to write interleaved stereo float32 PCM.
+- The first slice explicitly supports only 44.1 kHz mono/stereo input and reports unsupported sample rates/codecs.
+- The UI reports decoded frame counts and **does not claim vocals were removed**.
+
+**Still unimplemented:** MDX-Net STFT/iSTFT, inference over actual PCM, instrumental subtraction, WAV/MP4 export, and playback synchronization. This PR is not production-ready. Compilation and real-device tests remain outstanding.
