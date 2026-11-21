@@ -18,8 +18,7 @@ import java.security.MessageDigest
 
 /**
  * On-device MDX-NET model acquisition and ONNX Runtime validation.
- * IMPORTANT: Audio STFT, model inference over real audio, and iSTFT are not implemented.
- * Never claims a song has been separated.
+ * Experimental local-file MDX-NET pipeline. Not validated on physical devices yet.
  */
 class AiKaraokeActivity : Activity() {
  private lateinit var status: TextView
@@ -49,7 +48,7 @@ class AiKaraokeActivity : Activity() {
    textSize=15f
    setTextColor(Color.WHITE)
    setPadding(0,24,0,24)
-   text="真正的 AI 分離尚在開發中。這個畫面會下載並驗證本機 ONNX 模型，不會上傳歌曲。"
+   text="實驗版：可選擇本機 44.1 kHz 歌曲、下載模型並產生伴奏。尚未經手機實測；YouTube 影片不能直接使用這條流程。"
   }
   root.addView(status)
   action=Button(this).apply {
@@ -57,7 +56,7 @@ class AiKaraokeActivity : Activity() {
    setOnClickListener {confirmDownload()}
   }
   root.addView(action)
-  root.addView(Button(this).apply {text="選擇本機歌曲 · 測試解碼";setOnClickListener {pickAudio()}})
+  root.addView(Button(this).apply {text="選擇本機歌曲";setOnClickListener {pickAudio()}})
   processButton=Button(this).apply {text="AI 去人聲（本機檔案）";setOnClickListener {separateLocal()}}
   root.addView(processButton)
   root.addView(Button(this).apply {
@@ -87,8 +86,10 @@ class AiKaraokeActivity : Activity() {
   busy=true;action.isEnabled=false;status.text="解碼中…"
   Thread {
    try {
-    val result=LocalAudioDecoder.decode(this,uri,File(cacheDir,"ai-source.pcm"))
-    runOnUiThread {status.text="本機音訊解碼完成："+result.frames+" frames，44.1 kHz 雙聲道。AI 推論與伴奏輸出尚未完成。"}
+    val pcm=File(cacheDir,"ai-source.pcm")
+    pcm.delete()
+    val result=LocalAudioDecoder.decode(this,uri,pcm)
+    runOnUiThread {status.text="本機音訊解碼完成："+result.frames+" frames，44.1 kHz 雙聲道。可按 AI 去人聲開始處理。"}
    }catch(e:Exception) {
     runOnUiThread {status.text="解碼失敗："+(e.message ?: "未知錯誤")}
    }finally {runOnUiThread {busy=false;action.isEnabled=true}}
