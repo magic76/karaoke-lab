@@ -72,3 +72,18 @@ The former Android server/token/upload screen has been replaced by an **on-devic
 Model source: https://huggingface.co/gyoom-sa/UVR-MDX-LiteRT (MIT-licensed repository). Model download requires internet once. The previous `tools/ai_server.py` remains a legacy standalone experiment but is not used by the Android screen.
 
 **Validation pending:** Gradle build, on-device interpreter initialization and actual separation quality.
+
+## v0.21 ONNX on-device foundation (experimental PR)
+
+The earlier Hugging Face LiteRT URL returned 401/404. The Android model test now uses the public MDX-NET 3_9662 ONNX asset referenced by Murem's upstream `android/app/src/main/assets/models.json`:
+
+- Model: `UVR_MDXNET_3_9662.onnx`
+- Release: https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR_MDXNET_3_9662.onnx
+- Exact size: 29,704,436 bytes
+- SHA-256: `e02220e80d8253f4c2209f8924298b2b686bbdf2868b788ff5500fb9bd94aadc`
+- Android runtime: ONNX Runtime 1.31.1
+- Upstream reference: https://github.com/Ignema/youtube-music-remover (MIT application code)
+
+**This is a foundation only.** The UI validates model download and ONNX Runtime session creation. It does not yet perform AI separation on songs. A functional pipeline requires audio decoding/resampling, MDX-NET STFT, tiled inference, overlap-add iSTFT, instrumental reconstruction, and playback/video synchronization. YouTube WebView audio is not directly available for guaranteed replacement. No claim of functional AI karaoke should be made until those components and actual device tests pass.
+
+The old `tools/ai_server.py` remains in the repository as an unused legacy experiment and is not called by the Android AI screen.
