@@ -16,6 +16,8 @@ import android.widget.TextView
 import android.widget.VideoView
 import android.net.Uri
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 
 /** YouTube-first UI. No fake vocal-removal toggle: capture is diagnostics only. */
 class MainActivity : Activity() {
@@ -28,6 +30,15 @@ class MainActivity : Activity() {
  private lateinit var video:VideoView
  private lateinit var localButton:Button
  private var localMode=false
+ private var youtubeMuted=false
+ private lateinit var pcmText:TextView
+ private val uiHandler=Handler(Looper.getMainLooper())
+ private val meterTask=object:Runnable { override fun run() {
+  val p=getSharedPreferences("capture_probe",MODE_PRIVATE)
+  val age=System.currentTimeMillis()-p.getLong("timestamp",0)
+  pcmText.text=if(captureRequested && age in 0..2000) "PCM RMS: %.5f / Peak: %.5f".format(java.util.Locale.US,java.lang.Double.longBitsToDouble(p.getLong("rms",0)),java.lang.Double.longBitsToDouble(p.getLong("peak",0))) else "PCM: 無即時資料"
+  uiHandler.postDelayed(this,500)
+ } }
 
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
@@ -86,11 +97,27 @@ class MainActivity : Activity() {
     }
    }
   }
+  pcmText=TextView(this).apply { text="PCM: 無即時資料" }
+  val mute=Button(this).apply {
+   text="測試 YouTube 靜音"
+   setOnClickListener {
+    val desired=!youtubeMuted
+    val script="(function(){var a=Array.from(document.querySelectorAll('video,audio'));a.forEach(function(v){v.muted="+desired+";});return JSON.stringify({found:a.length,muted:a.filter(function(v){return v.muted;}).length});})()"
+    web.evaluateJavascript(script) { result ->
+     status.text="WebView 媒體控制結果: "+result+"。請實際確認聲音是否靜音，再觀察 PCM。"
+     youtubeMuted=desired
+     text=if(youtubeMuted) "恢復 YouTube 原聲" else "測試 YouTube 靜音"
+    }
+   }
+  }
   footer.addView(status)
+  footer.addView(pcmText)
+  footer.addView(mute)
   footer.addView(localButton)
   footer.addView(probe)
   root.addView(footer)
   setContentView(root)
+  uiHandler.post(meterTask)
  }
  private fun requestCapture() {
   val manager=getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -140,6 +167,7 @@ class MainActivity : Activity() {
  }
  private fun stopLocal() { localPlayer?.stop(); localPlayer=null; video.stopPlayback(); web.onResume() }
  override fun onDestroy() {
+  uiHandler.removeCallbacks(meterTask)
   stopLocal()
   if(captureRequested) startService(Intent(this,CaptureService::class.java).setAction(CaptureService.STOP))
   web.destroy()

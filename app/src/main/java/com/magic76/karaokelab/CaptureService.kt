@@ -42,9 +42,15 @@ class CaptureService:Service() {
      if(count>0) {
       var sum=0.0; var peak=0
       for(i in 0 until count) { val v=samples[i].toInt(); sum+=v.toDouble()*v; peak=max(peak,abs(v)) }
-      Log.i("KaraokeCapture","samples="+count+" rms="+sqrt(sum/count)/32768.0+" peak="+peak/32768.0)
+      val rms=sqrt(sum/count)/32768.0
+      val peakValue=peak/32768.0
+      getSharedPreferences("capture_probe",MODE_PRIVATE).edit()
+       .putLong("timestamp",System.currentTimeMillis())
+       .putLong("rms",java.lang.Double.doubleToRawLongBits(rms))
+       .putLong("peak",java.lang.Double.doubleToRawLongBits(peakValue)).apply()
+      Log.i("KaraokeCapture","samples="+count+" rms="+rms+" peak="+peakValue)
      } else Log.w("KaraokeCapture","read="+count)
-     try { Thread.sleep(250) } catch(_:InterruptedException) { break }
+
     }
    }.apply { start() }
   } catch(e:Exception) { Log.e("KaraokeCapture","Capture failed",e); stopSelf() }
