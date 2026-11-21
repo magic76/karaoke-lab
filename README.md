@@ -1,27 +1,29 @@
-# Karaoke Lab v0.5
+# Karaoke Lab v0.6 — controlled replacement proof
 
-## Primary goal
+## Goal
 
-Play a YouTube MV and hear a vocal-reduced soundtrack with synchronized video. **This goal is not yet implemented.**
+The desired experience is YouTube MV video with original vocals replaced by instrumental playback. **This is not implemented for YouTube.**
 
-The app now has a YouTube-first, single-screen UI. The only visible action is **Test audio capture**. It logs signal levels without changing, saving, or rerouting the audio. It must not be presented as vocal removal.
+## New proof-of-concept
 
-## Research status
+The app has a controlled-media replacement experiment:
 
-- On a Galaxy S25 Ultra, a previous controlled test found nonzero captured RMS while YouTube MV was playing, and zero RMS during silence.
-- This does not prove source attribution or establish a way to mute WebView's original audio.
-- Android playback capture is a copy of permitted output, not a mechanism to replace the original stream.
-- Playing processed capture on top of original audio would still leave the original vocals audible and create latency/echo.
-- YouTube platform restrictions on audio extraction and modification must be respected.
+1. Tap **測試可控影片音訊替換**.
+2. Choose a local video you own or are authorized to process.
+3. Android VideoView mutes the source MediaPlayer via `setVolume(0f,0f)`.
+4. The same local file is decoded separately by `LocalKaraokePlayer` and outputs center-cancelled stereo PCM through AudioTrack.
+5. Tap **返回 YouTube** to stop local playback and restore the WebView.
 
-## Archived experiments
+This demonstrates separate control of source volume and processed output in a **controlled media path**, unlike MediaProjection, which only captures a copy.
 
-`LocalKaraokePlayer.kt`, `InstrumentalOnnx.kt`, and `tools/separate_local.py` remain in the repo as research code, but are not part of the user-facing flow. Demucs preprocessing on local audio does not fulfill the YouTube objective.
+## Caveats
 
-## Next engineering gate
-
-Validate whether a permitted playback path exists that gives control of original audio output, audio PCM, and synchronization. Do not ship a misleading vocal-removal toggle until that path exists.
+- The DSP is center cancellation, not AI source separation.
+- VideoView and AudioTrack are separate clocks. Their synchronization is **not guaranteed**. The current test deliberately exposes this gap.
+- The player requires supported audio codec/PCM and stereo for cancellation; on unsupported media the video may continue silently.
+- YouTube WebView remains unchanged; no stream extraction, modification or audio replacement is performed.
+- Next milestone: single clock and frame-accurate synchronization for controlled media, then model inference benchmarks. YouTube cannot be assumed to support this architecture.
 
 ## Build
 
-Android SDK 35, JDK 17, Gradle 8.9; `gradle :app:assembleDebug`. Build and device verification still required.
+Android SDK 35, JDK 17, Gradle 8.9. Run `gradle :app:assembleDebug` locally.

@@ -13,6 +13,9 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.VideoView
+import android.net.Uri
+import android.media.MediaPlayer
 
 /** YouTube-first UI. No fake vocal-removal toggle: capture is diagnostics only. */
 class MainActivity : Activity() {
@@ -20,6 +23,11 @@ class MainActivity : Activity() {
  private lateinit var status:TextView
  private lateinit var probe:Button
  private var captureRequested=false
+ private var videoUri:Uri?=null
+ private var localPlayer:LocalKaraokePlayer?=null
+ private lateinit var video:VideoView
+ private lateinit var localButton:Button
+ private var localMode=false
 
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
@@ -31,7 +39,15 @@ class MainActivity : Activity() {
    webViewClient=WebViewClient()
    loadUrl("https://www.youtube.com/")
   }
+  video=VideoView(this).apply {
+   setOnPreparedListener { player ->
+    player.setVolume(0f,0f)
+    status.text="影片原聲已靜音；伴奏由獨立播放器輸出（同步仍待驗證）"
+   }
+  }
   root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
+  root.addView(video,LinearLayout.LayoutParams(-1,0,1f))
+  video.visibility=android.view.View.GONE
   val footer=LinearLayout(this).apply {
    orientation=LinearLayout.VERTICAL
    setPadding(16,8,16,12)
@@ -53,7 +69,25 @@ class MainActivity : Activity() {
     } else requestCapture()
    }
   }
+  localButton=Button(this).apply {
+   text="測試可控影片音訊替換"
+   setOnClickListener {
+    if(localMode) {
+     stopLocal()
+     web.visibility=android.view.View.VISIBLE
+     video.visibility=android.view.View.GONE
+     localMode=false
+     text="測試可控影片音訊替換"
+     status.text="已返回 YouTube（YouTube 音訊未加工）"
+    } else {
+     startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+      type="video/*"; addCategory(Intent.CATEGORY_OPENABLE)
+     },301)
+    }
+   }
+  }
   footer.addView(status)
+  footer.addView(localButton)
   footer.addView(probe)
   root.addView(footer)
   setContentView(root)
@@ -69,6 +103,29 @@ class MainActivity : Activity() {
  }
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
   super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==301 && resultCode==RESULT_OK && data?.data!=null) {
+   videoUri=data.data
+   val uri=videoUri ?: return
+   stopLocal()
+   localMode=true
+   web.onPause()
+   web.visibility=android.view.View.GONE
+   video.visibility=android.view.View.VISIBLE
+   video.setVideoURI(uri)
+   video.setOnPreparedListener { player ->
+    player.setVolume(0f,0f)
+    localPlayer=LocalKaraokePlayer(contentResolver,uri).apply {
+     mode=1
+     onStatus={ msg -> runOnUiThread { status.text=msg } }
+    }
+    video.start()
+    localPlayer?.play()
+    status.text="本機影片已靜音，獨立輸出中置消除音訊；請檢查影音同步"
+   }
+   video.setOnCompletionListener { stopLocal() }
+   localButton.text="返回 YouTube"
+   return
+  }
   if(requestCode!=101) return
   if(resultCode==RESULT_OK && data!=null) {
    startForegroundService(Intent(this,CaptureService::class.java).apply {
@@ -81,7 +138,9 @@ class MainActivity : Activity() {
    status.text="擷取測試中（只記錄訊號強度，不會改變 YouTube 聲音）"
   } else status.text="已取消音訊擷取授權"
  }
+ private fun stopLocal() { localPlayer?.stop(); localPlayer=null; video.stopPlayback(); web.onResume() }
  override fun onDestroy() {
+  stopLocal()
   if(captureRequested) startService(Intent(this,CaptureService::class.java).setAction(CaptureService.STOP))
   web.destroy()
   super.onDestroy()
