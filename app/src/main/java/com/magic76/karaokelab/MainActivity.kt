@@ -143,34 +143,43 @@ class MainActivity : Activity() {
    background=shape(Color.rgb(25,30,48),18)
   }
   toggle=styledButton("開啟卡拉 OK",true).apply {setOnClickListener {setKaraoke(!enabled)}}
-  footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(46)))
+  val mainRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+  footer.addView(mainRow)
+  mainRow.addView(toggle,LinearLayout.LayoutParams(0,dp(44),1f))
   fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation() }}
-  footer.addView(fullscreen,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  mainRow.addView(fullscreen,LinearLayout.LayoutParams(0,dp(44),1f).apply {leftMargin=dp(8)})
   qualityButton=styledButton("音質模式：標準").apply {
    setOnClickListener {
-    qualityMode=(qualityMode+1)%3
+    qualityMode=(qualityMode+1)%2
     text=when(qualityMode) {
      1 -> "音質模式：保留低頻"
-     2 -> "音質模式：自適應（實驗）"
      else -> "音質模式：標準"
     }
     if(enabled)setKaraoke(true)
    }
   }
-  footer.addView(qualityButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  val audioRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+  footer.addView(audioRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
+  audioRow.addView(qualityButton,LinearLayout.LayoutParams(0,dp(40),1f))
   captureButton=styledButton("檢測 WebView 音訊擷取").apply {setOnClickListener {if(captureProbeActive)stopCaptureProbe() else startCaptureProbe()}}
-  footer.addView(captureButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  audioRow.addView(captureButton,LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
   selfTestButton=styledButton("播放 3 秒測試音（檢查擷取）").apply {setOnClickListener {
    if(!captureProbeActive) {status.text="請先啟動 WebView 音訊擷取檢測";return@setOnClickListener}
    getSharedPreferences("capture_probe",MODE_PRIVATE).edit().putLong("selftest_peak",0).apply()
    startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.SELF_TEST))
   }}
-  footer.addView(selfTestButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
-  footer.addView(styledButton("下載／驗證 AI 模型").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java).putExtra("webview_only",true))}},LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
-  footer.addView(styledButton("分析 7 秒 WebView 音訊（AI 實驗）").apply {setOnClickListener {
+  val testRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+  footer.addView(testRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
+  selfTestButton.text="3 秒測試音"
+  testRow.addView(selfTestButton,LinearLayout.LayoutParams(0,dp(40),1f))
+  testRow.addView(styledButton("AI 模型設定").apply {setOnClickListener {startActivity(Intent(this@MainActivity,AiKaraokeActivity::class.java).putExtra("webview_only",true))}},LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
+  val aiRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+  footer.addView(aiRow,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(6)})
+  aiRow.addView(styledButton("AI 分析 7 秒").apply {setOnClickListener {
    if(!captureProbeActive){status.text="請先啟動音訊擷取";return@setOnClickListener}
    startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.AI_PROBE))
-  }},LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  }},LinearLayout.LayoutParams(0,dp(40),1f))
+  aiRow.addView(styledButton("收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}},LinearLayout.LayoutParams(0,dp(40),1f).apply {leftMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
@@ -379,57 +388,14 @@ class MainActivity : Activity() {
        bass.gain.value=0;highProcessed.gain.value=0;
        src.connect(low);low.connect(bass);bass.connect(ctx.destination);
        merge.connect(high);high.connect(highProcessed);highProcessed.connect(ctx.destination);
-       // Adaptive multiband experiment: estimate stereo correlation in
-       // the vocal range, then blend original mid-band and its side signal.
-       // This is correlation-guided DSP, not learned source separation.
-       var vocalL=ctx.createBiquadFilter(),vocalR=ctx.createBiquadFilter();
-       vocalL.type='bandpass';vocalR.type='bandpass';
-       vocalL.frequency.value=1400;vocalR.frequency.value=1400;
-       vocalL.Q.value=0.55;vocalR.Q.value=0.55;
-       var meterL=ctx.createAnalyser(),meterR=ctx.createAnalyser();
-       meterL.fftSize=1024;meterR.fftSize=1024;
-       split.connect(vocalL,0);split.connect(vocalR,1);
-       vocalL.connect(meterL);vocalR.connect(meterR);
-       var sideBand=ctx.createBiquadFilter();
-       sideBand.type='bandpass';sideBand.frequency.value=1400;sideBand.Q.value=0.55;
-       var sideGain=ctx.createGain();sideGain.gain.value=0;
-       merge.connect(sideBand);sideBand.connect(sideGain);sideGain.connect(ctx.destination);
-       var midBand=ctx.createBiquadFilter();
-       midBand.type='bandpass';midBand.frequency.value=1400;midBand.Q.value=0.55;
-       var midGain=ctx.createGain();midGain.gain.value=0;
-       src.connect(midBand);midBand.connect(midGain);midGain.connect(ctx.destination);
-       var air=ctx.createBiquadFilter();air.type='highpass';air.frequency.value=4200;
-       var airGain=ctx.createGain();airGain.gain.value=0;src.connect(air);air.connect(airGain);airGain.connect(ctx.destination);
-       k={ctx:ctx,original:original,processed:processed,bass:bass,highProcessed:highProcessed,
-          sideGain:sideGain,midGain:midGain,airGain:airGain,meterL:meterL,meterR:meterR,
-          adaptive:false,adaptiveWet:0.55};
-       k.timer=setInterval(function(){
-        if(!k.adaptive || k.ctx.state!=='running')return;
-        var a=new Float32Array(1024),b=new Float32Array(1024);
-        k.meterL.getFloatTimeDomainData(a);k.meterR.getFloatTimeDomainData(b);
-        var ab=0,aa=0,bb=0;
-        for(var i=0;i<a.length;i++){ab+=a[i]*b[i];aa+=a[i]*a[i];bb+=b[i]*b[i];}
-        if(aa<0.00001 || bb<0.00001)return;
-        var corr=ab/Math.sqrt(aa*bb);
-        // Strongly correlated midrange is more likely centered.
-        var target=Math.max(0.2,Math.min(0.85,(corr-0.15)*0.9));
-        k.adaptiveWet=k.adaptiveWet*0.8+target*0.2;
-        k.sideGain.gain.setTargetAtTime(k.adaptiveWet*k.wet,k.ctx.currentTime,0.08);
-        k.midGain.gain.setTargetAtTime((1-k.adaptiveWet)*k.wet,k.ctx.currentTime,0.08);
-       },150);
-       states.set(v,k);
+       k={ctx:ctx,original:original,processed:processed,bass:bass,highProcessed:highProcessed};
        states.set(v,k);
       }
       var quality=__QUALITY__;
-      k.adaptive=quality===2 && __WET__>0;
-      k.wet=__WET__;
       k.original.gain.setTargetAtTime(__DRY__,k.ctx.currentTime,0.03);
       k.processed.gain.setTargetAtTime(quality===0?__WET__:0,k.ctx.currentTime,0.03);
-      k.bass.gain.setTargetAtTime(quality!==0?__WET__:0,k.ctx.currentTime,0.03);
+      k.bass.gain.setTargetAtTime(quality===1?__WET__:0,k.ctx.currentTime,0.03);
       k.highProcessed.gain.setTargetAtTime(quality===1?__WET__:0,k.ctx.currentTime,0.03);
-      k.sideGain.gain.setTargetAtTime(quality===2?k.adaptiveWet*__WET__:0,k.ctx.currentTime,0.03);
-      k.midGain.gain.setTargetAtTime(quality===2?(1-k.adaptiveWet)*__WET__:0,k.ctx.currentTime,0.03);
-      k.airGain.gain.setTargetAtTime(quality===2?0.65*__WET__:0,k.ctx.currentTime,0.03);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     });
@@ -445,7 +411,7 @@ class MainActivity : Activity() {
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
      toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
      toggle.setTextColor(if(enabled)Color.WHITE else background)
-     status.text=if(enabled)when(qualityMode) { 1 -> "保留低頻模式 · 效果依音源而異"; 2 -> "自適應 DSP 實驗 · 非 AI 分離"; else -> "標準模式 · 效果依音源而異" } else "已恢復原始聲音"
+     status.text=if(enabled)when(qualityMode) { 1 -> "保留低頻模式 · 效果依音源而異"; else -> "標準模式 · 效果依音源而異" } else "已恢復原始聲音"
     }else status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
   }
