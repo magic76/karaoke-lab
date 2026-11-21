@@ -336,6 +336,7 @@ class MainActivity : Activity() {
        var split=ctx.createChannelSplitter(2);
        var merge=ctx.createChannelMerger(2);
        var original=ctx.createGain(),processed=ctx.createGain();
+       original.gain.value=0;processed.gain.value=0;
        src.connect(original);original.connect(ctx.destination);
        src.connect(split);
        [[0,0,0.5],[1,0,-0.5],[1,1,0.5],[0,1,-0.5]].forEach(function(t){
@@ -351,6 +352,7 @@ class MainActivity : Activity() {
        var high=ctx.createBiquadFilter();
        high.type='highpass';high.frequency.value=180;high.Q.value=0.707;
        var bass=ctx.createGain(),highProcessed=ctx.createGain();
+       bass.gain.value=0;highProcessed.gain.value=0;
        src.connect(low);low.connect(bass);bass.connect(ctx.destination);
        merge.connect(high);high.connect(highProcessed);highProcessed.connect(ctx.destination);
        // Adaptive multiband experiment: estimate stereo correlation in
@@ -366,14 +368,14 @@ class MainActivity : Activity() {
        vocalL.connect(meterL);vocalR.connect(meterR);
        var sideBand=ctx.createBiquadFilter();
        sideBand.type='bandpass';sideBand.frequency.value=1400;sideBand.Q.value=0.55;
-       var sideGain=ctx.createGain();
+       var sideGain=ctx.createGain();sideGain.gain.value=0;
        merge.connect(sideBand);sideBand.connect(sideGain);sideGain.connect(ctx.destination);
        var midBand=ctx.createBiquadFilter();
        midBand.type='bandpass';midBand.frequency.value=1400;midBand.Q.value=0.55;
-       var midGain=ctx.createGain();
+       var midGain=ctx.createGain();midGain.gain.value=0;
        src.connect(midBand);midBand.connect(midGain);midGain.connect(ctx.destination);
        var air=ctx.createBiquadFilter();air.type='highpass';air.frequency.value=4200;
-       var airGain=ctx.createGain();src.connect(air);air.connect(airGain);airGain.connect(ctx.destination);
+       var airGain=ctx.createGain();airGain.gain.value=0;src.connect(air);air.connect(airGain);airGain.connect(ctx.destination);
        k={ctx:ctx,original:original,processed:processed,bass:bass,highProcessed:highProcessed,
           sideGain:sideGain,midGain:midGain,airGain:airGain,meterL:meterL,meterR:meterR,
           adaptive:false,adaptiveWet:0.55};
