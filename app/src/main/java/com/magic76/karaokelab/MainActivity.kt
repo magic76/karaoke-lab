@@ -42,6 +42,8 @@ class MainActivity : Activity() {
  private lateinit var panel:FrameLayout
  private lateinit var handle:Button
  private lateinit var fullscreen:Button
+ private lateinit var qualityButton:Button
+ private var qualityMode=false
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -132,6 +134,14 @@ class MainActivity : Activity() {
   footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(46)))
   fullscreen=styledButton("⛶  全螢幕").apply {setOnClickListener { immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation() }}
   footer.addView(fullscreen,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
+  qualityButton=styledButton("音質模式：標準").apply {
+   setOnClickListener {
+    qualityMode=!qualityMode
+    text=if(qualityMode)"音質模式：保留低頻" else "音質模式：標準"
+    if(enabled)setKaraoke(true)
+   }
+  }
+  footer.addView(qualityButton,LinearLayout.LayoutParams(-1,dp(40)).apply {topMargin=dp(8)})
   val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
   labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
   percent=caption("15%")
@@ -299,6 +309,7 @@ class MainActivity : Activity() {
   val id=++requestId
   val dry=if(turnOn)retain/100.0 else 1.0
   val wet=if(turnOn)1.0-retain/100.0 else 0.0
+  val quality=if(qualityMode)1 else 0
   val script="""(function(){
    try {
     var media=Array.from(document.querySelectorAll('video,audio'));
@@ -321,16 +332,32 @@ class MainActivity : Activity() {
         split.connect(gain,t[0]);gain.connect(merge,0,t[1]);
        });
        merge.connect(processed);processed.connect(ctx.destination);
-       k={ctx:ctx,original:original,processed:processed};states.set(v,k);
+       // DSP v2: preserve centered bass from the original mix while
+       // applying center cancellation above the crossover frequency.
+       // High-pass the processed stereo difference, low-pass the original.
+       var low=ctx.createBiquadFilter();
+       low.type='lowpass';low.frequency.value=180;low.Q.value=0.707;
+       var high=ctx.createBiquadFilter();
+       high.type='highpass';high.frequency.value=180;high.Q.value=0.707;
+       var bass=ctx.createGain(),highProcessed=ctx.createGain();
+       src.connect(low);low.connect(bass);bass.connect(ctx.destination);
+       merge.connect(high);high.connect(highProcessed);highProcessed.connect(ctx.destination);
+       k={ctx:ctx,original:original,processed:processed,bass:bass,highProcessed:highProcessed};
+       states.set(v,k);
       }
-      k.original.gain.setTargetAtTime(__DRY__,k.ctx.currentTime,0.02);
-      k.processed.gain.setTargetAtTime(__WET__,k.ctx.currentTime,0.02);
+      var quality=__QUALITY__;
+      k.original.gain.setTargetAtTime(quality?0:__DRY__,k.ctx.currentTime,0.02);
+      k.processed.gain.setTargetAtTime(quality?0:__WET__,k.ctx.currentTime,0.02);
+      k.bass.gain.setTargetAtTime(quality?__WET__:0,k.ctx.currentTime,0.02);
+      k.highProcessed.gain.setTargetAtTime(quality?__WET__:0,k.ctx.currentTime,0.02);
+      // The original mix is retained at the user-selected level across all bands.
+      if(quality)k.original.gain.setTargetAtTime(__DRY__,k.ctx.currentTime,0.02);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     });
     return JSON.stringify({ok:changed>0,changed:changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__DRY__",dry.toString()).replace("__WET__",wet.toString())
+  })()""".replace("__DRY__",dry.toString()).replace("__WET__",wet.toString()).replace("__QUALITY__",quality.toString())
   web.evaluateJavascript(script) { raw ->
    if(id!=requestId)return@evaluateJavascript
    try {
@@ -340,7 +367,7 @@ class MainActivity : Activity() {
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
      toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
      toggle.setTextColor(if(enabled)Color.WHITE else background)
-     status.text=if(enabled)"卡拉 OK 已啟用 · 效果依音源而異" else "已恢復原始聲音"
+     status.text=if(enabled)(if(qualityMode)"保留低頻模式 · 效果依音源而異" else "標準模式 · 效果依音源而異") else "已恢復原始聲音"
     }else status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
    }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
   }
