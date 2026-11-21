@@ -67,7 +67,7 @@ object LocalAudioDecoder {
        val buffer=codec.getOutputBuffer(index) ?: error("輸出緩衝區不存在")
        buffer.position(info.offset)
        buffer.limit(info.offset+info.size)
-       val formatCode=codec.outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING)
+       val formatCode=if(codec.outputFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) codec.outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING) else android.media.AudioFormat.ENCODING_PCM_16BIT
        val bytes=ByteArray(info.size)
        buffer.get(bytes)
        val pcm=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
