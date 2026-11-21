@@ -6,4 +6,4 @@ android { namespace = "com.magic76.karaokelab"; compileSdk = 35
  kotlinOptions { jvmTarget = "17" }
 }
 
-dependencies { implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1") }
+dependencies { implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1"); implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0") }
