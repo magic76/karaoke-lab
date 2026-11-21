@@ -111,6 +111,7 @@ class MainActivity : Activity() {
      detach(view)
      panel.addView(view,FrameLayout.LayoutParams(-1,-1))
      view.bringToFront()
+     handle.bringToFront()
      applySystemBars()
     }
     override fun onHideCustomView() {closeCustomVideo()}
@@ -247,8 +248,13 @@ class MainActivity : Activity() {
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
   } else {
    root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
-   root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
-   root.addView(handle,LinearLayout.LayoutParams(-1,dp(42)))
+   // Keep the control handle in a stable overlay, independent of footer visibility.
+   panel.addView(web,FrameLayout.LayoutParams(-1,-1))
+   panel.addView(handle,FrameLayout.LayoutParams(dp(138),dp(44),Gravity.RIGHT or Gravity.BOTTOM).apply {
+    rightMargin=dp(12)
+    bottomMargin=dp(12)
+   })
+   root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
   }
   updateControls()
@@ -266,7 +272,8 @@ class MainActivity : Activity() {
   } else {
    navigation.visibility=if(immersive)View.GONE else View.VISIBLE
    footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
-   handle.text=if(controlsOpen)"⌄  收起控制" else "♫  展開卡拉 OK"
+   handle.visibility=View.VISIBLE
+   handle.text=if(controlsOpen)"⌄  收起控制" else "♫  卡拉 OK"
    handle.contentDescription=handle.text
   }
  }
