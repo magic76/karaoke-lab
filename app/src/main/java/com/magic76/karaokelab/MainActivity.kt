@@ -36,7 +36,7 @@ class MainActivity : Activity() {
   window.statusBarColor=background
   window.navigationBarColor=background
   window.decorView.systemUiVisibility=0
-  val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(background)}
+  val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
   val navigation=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4))}
   address=EditText(this).apply {
    setSingleLine(true);setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY)
