@@ -62,3 +62,13 @@ python3 -m uvicorn tools.ai_server:app --host 127.0.0.1 --port 8765
 Expose it only through an authenticated HTTPS reverse proxy / tunnel (for example, `https://your-domain/separate`). **Do not expose the inference port directly to the internet.** Enter that full endpoint URL and the matching token in the Android screen. Processing is offline/batch on the server, not on-device or real-time. It does not extract audio from YouTube or replace the YouTube WebView stream. Uploaded files are deleted by the server after the response finishes, except interrupted/crashed jobs which may require manual cleanup. The token is currently saved in Android app preferences, not hardware-backed encrypted storage; use a dedicated, revocable token.
 
 **Not yet validated:** Android compilation, actual APK, inference throughput, real-device playback and video synchronization.
+
+## On-device AI model milestone (v0.20, experimental)
+
+The former Android server/token/upload screen has been replaced by an **on-device model readiness** screen. It downloads the `UVR_MDXNET_9482.fp16acc.tflite` LiteRT model from Hugging Face into app-private storage and attempts to open it using TensorFlow Lite on the phone. No song or media file is uploaded.
+
+**Important: this is not yet an operational vocal separator.** Audio decoding, 44.1 kHz stereo STFT, segmenting and overlap-add, inference with correctly shaped tensors, inverse STFT, instrumental reconstruction, video playback synchronization, and YouTube WebView source audio replacement are all still missing. The Android UI explicitly reports this status.
+
+Model source: https://huggingface.co/gyoom-sa/UVR-MDX-LiteRT (MIT-licensed repository). Model download requires internet once. The previous `tools/ai_server.py` remains a legacy standalone experiment but is not used by the Android screen.
+
+**Validation pending:** Gradle build, on-device interpreter initialization and actual separation quality.
