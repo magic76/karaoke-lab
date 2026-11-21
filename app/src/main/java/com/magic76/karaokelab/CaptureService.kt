@@ -49,7 +49,10 @@ class CaptureService:Service() {
       for(i in 0 until count) { val v=samples[i].toInt(); sum+=v.toDouble()*v; peak=max(peak,abs(v)) }
       val rms=sqrt(sum/count)/32768.0
       val peakValue=peak/32768.0
-      getSharedPreferences("capture_probe",MODE_PRIVATE).edit()
+      val prefs=getSharedPreferences("capture_probe",MODE_PRIVATE)
+      val testAge=System.currentTimeMillis()-prefs.getLong("selftest_started",0)
+      if(testAge in 0..3500){val prior=java.lang.Double.longBitsToDouble(prefs.getLong("selftest_peak",0));if(peakValue>prior)prefs.edit().putLong("selftest_peak",java.lang.Double.doubleToRawLongBits(peakValue)).apply()}
+      prefs.edit()
        .putLong("timestamp",System.currentTimeMillis())
        .putLong("rms",java.lang.Double.doubleToRawLongBits(rms))
        .putLong("peak",java.lang.Double.doubleToRawLongBits(peakValue))
