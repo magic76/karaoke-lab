@@ -40,7 +40,6 @@ class MainActivity : Activity() {
  private lateinit var footer:LinearLayout
  private lateinit var drawer:LinearLayout
  private lateinit var panel:FrameLayout
- private lateinit var collapse:Button
  private lateinit var handle:Button
  private lateinit var fullscreen:Button
  private var immersive=false
@@ -153,8 +152,7 @@ class MainActivity : Activity() {
   footer.addView(slider)
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
-  collapse=styledButton("⌄  收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}}
-  handle=styledButton("♫  卡拉 OK",true).apply {setOnClickListener {controlsOpen=true;updateControls()}}
+  handle=styledButton("♫  卡拉 OK",true)
   drawer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(this@MainActivity.background)}
 
   var swipeStart=0f
@@ -176,7 +174,10 @@ class MainActivity : Activity() {
    private var startY=0f
    private var dragging=false
    override fun onTouch(v:View,event:MotionEvent):Boolean {
-    if(!landscape())return false
+    if(!landscape()) {
+     if(event.actionMasked==MotionEvent.ACTION_UP) {controlsOpen=!controlsOpen;updateControls()}
+     return true
+    }
     when(event.actionMasked) {
      MotionEvent.ACTION_DOWN -> {
       downX=event.rawX;downY=event.rawY
@@ -200,7 +201,7 @@ class MainActivity : Activity() {
        val maxY=(panel.height-v.height).coerceAtLeast(1).toFloat()
        floatXFraction=(v.x/maxX).coerceIn(0f,1f)
        floatYFraction=(v.y/maxY).coerceIn(0f,1f)
-      } else {controlsOpen=true;updateControls()}
+      } else {controlsOpen=!controlsOpen;updateControls()}
       return true
      }
      else -> return true
@@ -214,7 +215,7 @@ class MainActivity : Activity() {
  private fun landscape()=resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE
  private fun detach(view:View) {(view.parent as? android.view.ViewGroup)?.removeView(view)}
  private fun layoutForOrientation() {
-  detach(navigation);detach(web);detach(footer);detach(collapse);detach(handle);detach(drawer);detach(panel)
+  detach(navigation);detach(web);detach(footer);detach(handle);detach(drawer);detach(panel)
   root.removeAllViews()
   drawer.removeAllViews()
   panel.removeAllViews()
@@ -222,13 +223,11 @@ class MainActivity : Activity() {
    panel.addView(web,FrameLayout.LayoutParams(-1,-1))
    drawer.setPadding(dp(10),dp(10),dp(10),dp(10))
    drawer.background=shape(Color.rgb(24,29,48),18)
-   collapse.text="收起  ›"
-   drawer.addView(collapse,LinearLayout.LayoutParams(-1,dp(40)))
    drawer.addView(navigation,LinearLayout.LayoutParams(-1,dp(56)))
    drawer.addView(footer,LinearLayout.LayoutParams(-1,-2))
    panel.addView(drawer,FrameLayout.LayoutParams(dp(320),-1,Gravity.RIGHT))
    handle.text="♫"
-   panel.addView(handle,FrameLayout.LayoutParams(dp(48),dp(54),Gravity.TOP or Gravity.LEFT))
+   panel.addView(handle,FrameLayout.LayoutParams(dp(54),dp(54),Gravity.TOP or Gravity.LEFT))
    panel.post {
     val maxX=(panel.width-handle.width).coerceAtLeast(0).toFloat()
     val maxY=(panel.height-handle.height).coerceAtLeast(0).toFloat()
@@ -239,10 +238,7 @@ class MainActivity : Activity() {
   } else {
    root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
    root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
-   collapse.text="⌄  收起控制"
-   handle.text="♫  卡拉 OK 控制"
-   root.addView(collapse,LinearLayout.LayoutParams(-1,dp(36)))
-   root.addView(handle,LinearLayout.LayoutParams(-1,dp(40)))
+   root.addView(handle,LinearLayout.LayoutParams(-1,dp(42)))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
   }
   updateControls()
@@ -250,16 +246,18 @@ class MainActivity : Activity() {
   applySystemBars()
  }
  private fun updateControls() {
+  handle.visibility=View.VISIBLE
   if(landscape()) {
    navigation.visibility=View.VISIBLE
-   collapse.visibility=View.VISIBLE
    drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
-   handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
+   handle.text=if(controlsOpen)"×" else "♫"
+   handle.contentDescription=if(controlsOpen)"收起卡拉 OK 控制" else "展開卡拉 OK 控制"
+   handle.bringToFront()
   } else {
    navigation.visibility=if(immersive)View.GONE else View.VISIBLE
    footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
-   handle.visibility=if(controlsOpen)View.GONE else View.VISIBLE
-   collapse.visibility=if(controlsOpen)View.VISIBLE else View.GONE
+   handle.text=if(controlsOpen)"⌄  收起控制" else "♫  展開卡拉 OK"
+   handle.contentDescription=handle.text
   }
  }
  override fun onConfigurationChanged(newConfig:Configuration) {
