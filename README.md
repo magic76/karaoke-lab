@@ -1,4 +1,4 @@
-# Karaoke Lab v0.3
+# Karaoke Lab v0.4
 
 Personal Android research APK, built for local testing on Galaxy S25 Ultra.
 
@@ -9,7 +9,7 @@ Personal Android research APK, built for local testing on Galaxy S25 Ultra.
 
 3. **Experimental AI ONNX:** choose a compatible instrumental-output ONNX model and play local stereo 48 kHz audio. See [model contract](docs/ONNX_MODEL.md). **No pretrained model is included.**
 
-## Local build
+4. **Real pretrained AI separation (offline):** run [Demucs separation](docs/DEMUCS.md) on your own local audio, transfer the instrumental WAV to the phone, then play it in **Demucs instrumental** mode. This uses a real pretrained model, but separation runs on a computer, not on Android.\n\n## Local build
 
 Requires Android SDK 35, JDK 17, Gradle 8.9 (Gradle wrapper not included). Import with Android Studio or run `gradle :app:assembleDebug`.
 

@@ -15,17 +15,21 @@ class MainActivity: Activity() {
  private var selected:Uri?=null
  private var mode=0
  private var model:Uri?=null
+ private var instrumental:Uri?=null
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
   val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
   val controls=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-  status=TextView(this).apply { text="Karaoke Lab v0.3 — local karaoke + YouTube capture diagnostics"; setPadding(12,12,12,12) }
+  status=TextView(this).apply { text="Karaoke Lab v0.4 — local karaoke + YouTube capture diagnostics"; setPadding(12,12,12,12) }
   fun button(label:String,action:()->Unit) { controls.addView(Button(this).apply { text=label; setOnClickListener { action() } }) }
   button("1. Choose local audio (MP3 / M4A / WAV)") {
    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="audio/*"; addCategory(Intent.CATEGORY_OPENABLE) },201)
   }
+  button("Choose AI-separated instrumental (Demucs)") {
+   startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="audio/*"; addCategory(Intent.CATEGORY_OPENABLE) },203)
+  }
   val modes=RadioGroup(this).apply { orientation=RadioGroup.HORIZONTAL }
-  arrayOf("Original","Center cancel","AI ONNX").forEachIndexed { index,label ->
+  arrayOf("Original","Center cancel","AI ONNX","Demucs instrumental").forEachIndexed { index,label ->
    modes.addView(RadioButton(this).apply { text=label; id=1000+index })
   }
   modes.check(1000)
@@ -35,12 +39,12 @@ class MainActivity: Activity() {
    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type="*/*"; addCategory(Intent.CATEGORY_OPENABLE) },202)
   }
   button("2. Play local karaoke") {
-   val uri=selected
+   val uri=if(mode==3) instrumental else selected
    if(uri==null) status.text="Choose a local audio file first"
    else {
     karaoke?.stop()
     karaoke=LocalKaraokePlayer(contentResolver,uri).also {
-     it.mode=mode
+     it.mode=if(mode==3) 0 else mode
      it.modelUri=model
      it.onStatus={ msg -> runOnUiThread { status.text=msg } }
      it.play()
@@ -80,7 +84,9 @@ class MainActivity: Activity() {
  }
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
   super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode==202 && resultCode==RESULT_OK && data?.data!=null) {
+  if(requestCode==203 && resultCode==RESULT_OK && data?.data!=null) {
+   instrumental=data.data; status.text="Selected Demucs instrumental: "+instrumental.toString()
+  } else if(requestCode==202 && resultCode==RESULT_OK && data?.data!=null) {
    model=data.data; status.text="Selected ONNX model: "+model.toString()
   } else if(requestCode==201 && resultCode==RESULT_OK && data?.data!=null) {
    selected=data.data
