@@ -1,143 +1,159 @@
 package com.magic76.karaokelab
 
-import android.Manifest
 import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.os.Bundle
+import android.graphics.Color
+import android.content.Context
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
-import android.os.Handler
-import android.os.Looper
+import android.net.Uri
+import org.json.JSONObject
 
-/** Experimental YouTube in-page stereo center cancellation; may fail for cross-origin media. */
+/** Generic WebView karaoke: stereo center cancellation, not AI separation. */
 class MainActivity : Activity() {
  private lateinit var web:WebView
+ private lateinit var address:EditText
  private lateinit var status:TextView
- private lateinit var probe:Button
- private var captureRequested=false
- private lateinit var pcmText:TextView
- private val uiHandler=Handler(Looper.getMainLooper())
- private val meterTask=object:Runnable { override fun run() {
-  val p=getSharedPreferences("capture_probe",MODE_PRIVATE)
-  val age=System.currentTimeMillis()-p.getLong("timestamp",0)
-  pcmText.text=if(captureRequested && age in 0..2000) "PCM RMS: %.5f / Peak: %.5f".format(java.util.Locale.US,java.lang.Double.longBitsToDouble(p.getLong("rms",0)),java.lang.Double.longBitsToDouble(p.getLong("peak",0))) else "PCM: 無即時資料"
-  uiHandler.postDelayed(this,500)
- } }
-
+ private lateinit var toggle:Button
+ private lateinit var slider:SeekBar
+ private lateinit var percent:TextView
+ private var enabled=false
+ private var retain=15
+ private var requestId=0
+ private val background=Color.rgb(18,22,38)
+ private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+ private fun caption(value:String)=TextView(this).apply { text=value;setTextColor(Color.WHITE);textSize=14f }
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
-  val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+  window.statusBarColor=background
+  window.navigationBarColor=background
+  window.decorView.systemUiVisibility=0
+  val root=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setBackgroundColor(background)}
+  val navigation=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4))}
+  address=EditText(this).apply {
+   setSingleLine(true);setTextColor(Color.WHITE);setHintTextColor(Color.LTGRAY)
+   setText("https://www.youtube.com/");hint="輸入網站網址"
+   inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+   imeOptions=EditorInfo.IME_ACTION_GO
+   setOnEditorActionListener { _,_,_ -> navigate();true }
+  }
+  navigation.addView(address,LinearLayout.LayoutParams(0,dp(48),1f))
+  navigation.addView(Button(this).apply {text="前往";isAllCaps=false;setOnClickListener {navigate()}},LinearLayout.LayoutParams(dp(72),dp(48)))
+  root.addView(navigation)
   web=WebView(this).apply {
    settings.javaScriptEnabled=true
    settings.domStorageEnabled=true
    webChromeClient=WebChromeClient()
-   webViewClient=WebViewClient()
-   loadUrl("https://www.youtube.com/")
-  }
-  root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
-  val footer=LinearLayout(this).apply {
-   orientation=LinearLayout.VERTICAL
-   setPadding(16,8,16,12)
-  }
-  status=TextView(this).apply {
-   text="播放 YouTube MV 後，按「實驗：YouTube 去人聲」。這是立體聲中置消除，不是 AI；部分影片可能無聲。"
-   textSize=13f
-  }
-  probe=Button(this).apply {
-   text="測試音訊擷取"
-   setOnClickListener {
-    if(captureRequested) {
-     startService(Intent(this@MainActivity,CaptureService::class.java).setAction(CaptureService.STOP))
-     captureRequested=false
-     text="測試音訊擷取"
-     status.text="已停止擷取測試"
-    } else if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED) {
-     requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO),102)
-    } else requestCapture()
-   }
-  }
-  pcmText=TextView(this).apply { text="PCM: 無即時資料" }
-  val karaoke=Button(this).apply {
-   text="實驗：YouTube 去人聲"
-   setOnClickListener {
-    // Audio source routing is attempted inside the WebView's page context.
-    // Cross-origin media may yield silence. This is not AI separation.
-    val script="""(function(){
-     try {
-      var v=document.querySelector('video');
-      if(!v) return JSON.stringify({ok:false,reason:'no-video-in-top-frame'});
-      if(v.muted) v.muted=false;
-      var k=window.__karaokeProbe;
-      if(k && k.video!==v) {try{k.context.close()}catch(e){};k=null;window.__karaokeProbe=null;}
-      if(!k) {
-       var ctx=new (window.AudioContext||window.webkitAudioContext)();
-       var source=ctx.createMediaElementSource(v);
-       var split=ctx.createChannelSplitter(2);
-       var merge=ctx.createChannelMerger(2);
-       var dry=ctx.createGain(),wet=ctx.createGain();
-       source.connect(dry);dry.connect(ctx.destination);
-       source.connect(split);
-       [[0,0,0.5],[1,0,-0.5],[1,1,0.5],[0,1,-0.5]].forEach(function(t){
-        var g=ctx.createGain();g.gain.value=t[2];split.connect(g,t[0]);g.connect(merge,0,t[1]);
-       });
-       merge.connect(wet);wet.connect(ctx.destination);
-       k={video:v,context:ctx,dry:dry,wet:wet,enabled:false};
-       window.__karaokeProbe=k;
-      }
-      k.enabled=!k.enabled;
-      k.dry.gain.value=k.enabled?0:1;
-      k.wet.gain.value=k.enabled?1:0;
-      k.context.resume();
-      return JSON.stringify({ok:true,enabled:k.enabled,context:k.context.state,channels:2,method:'stereo-center-cancel',warning:'cross-origin-media-may-output-silence'});
-     } catch(e) {return JSON.stringify({ok:false,reason:String(e)});}
-    })()"""
-    web.evaluateJavascript(script) { result ->
-     status.text="去人聲實驗結果："+result+"。若完全無聲，可能是跨來源音訊限制；重新整理頁面可恢復。"
+   webViewClient=object:WebViewClient() {
+    override fun onPageFinished(view:WebView?,url:String?) {
+     address.setText(url ?: "")
+     requestId++
+     enabled=false
+     toggle.text="開啟卡拉 OK"
+     status.text="播放音樂後，可開啟卡拉 OK 模式"
     }
    }
   }
+  root.addView(web,LinearLayout.LayoutParams(-1,0,1f))
+  val footer=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(8),dp(16),dp(12))}
+  toggle=Button(this).apply {text="開啟卡拉 OK";isAllCaps=false;setOnClickListener {setKaraoke(!enabled)}}
+  footer.addView(toggle,LinearLayout.LayoutParams(-1,dp(50)))
+  val labelRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL}
+  labelRow.addView(caption("原聲保留比例"),LinearLayout.LayoutParams(0,-2,1f))
+  percent=caption("15%")
+  labelRow.addView(percent)
+  footer.addView(labelRow)
+  slider=SeekBar(this).apply {
+   max=100;progress=15
+   setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
+    override fun onProgressChanged(bar:SeekBar?,value:Int,fromUser:Boolean) {
+     retain=value;percent.text="$value%"
+     if(enabled && fromUser)setKaraoke(true)
+    }
+    override fun onStartTrackingTouch(bar:SeekBar?) {}
+    override fun onStopTrackingTouch(bar:SeekBar?) {}
+   })
+  }
+  footer.addView(slider)
+  status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
-  footer.addView(pcmText)
-  footer.addView(karaoke)
-  footer.addView(probe)
   root.addView(footer)
   setContentView(root)
-  uiHandler.post(meterTask)
+  web.loadUrl("https://www.youtube.com/")
  }
- private fun requestCapture() {
-  val manager=getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-  startActivityForResult(manager.createScreenCaptureIntent(),101)
+ private fun navigate() {
+  val raw=address.text.toString().trim()
+  if(raw.isEmpty())return
+  val target=if(raw.contains("://"))raw else "https://$raw"
+  val uri=Uri.parse(target)
+  if((uri.scheme!="https" && uri.scheme!="http") || uri.host.isNullOrBlank()) {
+   status.text="請輸入有效的 HTTP/HTTPS 網址";return
+  }
+  requestId++
+  enabled=false;toggle.text="開啟卡拉 OK"
+  web.loadUrl(target)
+  (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken,0)
+  address.clearFocus()
  }
- override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
-  super.onRequestPermissionsResult(requestCode,permissions,grantResults)
-  if(requestCode==102 && grantResults.firstOrNull()==PackageManager.PERMISSION_GRANTED) requestCapture()
-  else if(requestCode==102) status.text="需要音訊擷取權限才能測試"
+ private fun setKaraoke(turnOn:Boolean) {
+  val id=++requestId
+  val dry=if(turnOn)retain/100.0 else 1.0
+  val wet=if(turnOn)1.0-retain/100.0 else 0.0
+  val script="""(function(){
+   try {
+    var media=Array.from(document.querySelectorAll('video,audio'));
+    if(!media.length)return JSON.stringify({ok:false,reason:'no-accessible-media'});
+    var states=window.__karaokeStates||(window.__karaokeStates=new Map());
+    var changed=0,errors=[];
+    media.forEach(function(v){
+     try {
+      var k=states.get(v);
+      if(!k) {
+       var ctx=new (window.AudioContext||window.webkitAudioContext)();
+       var src=ctx.createMediaElementSource(v);
+       var split=ctx.createChannelSplitter(2);
+       var merge=ctx.createChannelMerger(2);
+       var original=ctx.createGain(),processed=ctx.createGain();
+       src.connect(original);original.connect(ctx.destination);
+       src.connect(split);
+       [[0,0,0.5],[1,0,-0.5],[1,1,0.5],[0,1,-0.5]].forEach(function(t){
+        var gain=ctx.createGain();gain.gain.value=t[2];
+        split.connect(gain,t[0]);gain.connect(merge,0,t[1]);
+       });
+       merge.connect(processed);processed.connect(ctx.destination);
+       k={ctx:ctx,original:original,processed:processed};states.set(v,k);
+      }
+      k.original.gain.setTargetAtTime(__DRY__,k.ctx.currentTime,0.02);
+      k.processed.gain.setTargetAtTime(__WET__,k.ctx.currentTime,0.02);
+      k.ctx.resume();changed++;
+     }catch(e){errors.push(String(e));}
+    });
+    return JSON.stringify({ok:changed>0,changed:changed,total:media.length,errors:errors.slice(0,2)});
+   }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
+  })()""".replace("__DRY__",dry.toString()).replace("__WET__",wet.toString())
+  web.evaluateJavascript(script) { raw ->
+   if(id!=requestId)return@evaluateJavascript
+   try {
+    val result=JSONObject(org.json.JSONTokener(raw).nextValue() as String)
+    if(result.optBoolean("ok")) {
+     enabled=turnOn
+     toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
+     status.text=if(enabled)"卡拉 OK 已啟用 · 效果依音源而異" else "已恢復原始聲音"
+    }else status.text="無法處理此頁面音訊："+result.optString("reason",result.optString("errors"))
+   }catch(e:Exception){status.text="音訊控制失敗，請重新播放再試"}
+  }
  }
- override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
-  super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode!=101) return
-  if(resultCode==RESULT_OK && data!=null) {
-   startForegroundService(Intent(this,CaptureService::class.java).apply {
-    action=CaptureService.START
-    putExtra(CaptureService.CODE,resultCode)
-    putExtra(CaptureService.DATA,data)
-   })
-   captureRequested=true
-   probe.text="停止音訊擷取測試"
-   status.text="擷取測試中（只記錄訊號強度，不會改變 YouTube 聲音）"
-  } else status.text="已取消音訊擷取授權"
+ @Deprecated("Deprecated in Java")
+ override fun onBackPressed() {
+  if(web.canGoBack())web.goBack() else super.onBackPressed()
  }
- override fun onDestroy() {
-  uiHandler.removeCallbacks(meterTask)
-  if(captureRequested) startService(Intent(this,CaptureService::class.java).setAction(CaptureService.STOP))
-  web.destroy()
-  super.onDestroy()
- }
+ override fun onDestroy() {web.destroy();super.onDestroy()}
 }
