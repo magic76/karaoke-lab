@@ -38,6 +38,9 @@ class MainActivity : Activity() {
  private lateinit var root:LinearLayout
  private lateinit var navigation:LinearLayout
  private lateinit var footer:LinearLayout
+ private lateinit var compactFooter:LinearLayout
+ private lateinit var compactToggle:Button
+ private lateinit var compactFullscreen:Button
  private lateinit var drawer:LinearLayout
  private lateinit var panel:FrameLayout
  private lateinit var handle:Button
@@ -130,6 +133,7 @@ class MainActivity : Activity() {
      enabled=false
      toggle.text="開啟卡拉 OK"
      quickToggle.text="開啟卡拉 OK"
+     compactToggle.text="開啟卡拉 OK"
      status.text="播放音樂後，可開啟卡拉 OK 模式"
     }
    }
@@ -181,6 +185,25 @@ class MainActivity : Activity() {
    LinearLayout.LayoutParams(-1,dp(38)).apply {topMargin=dp(4)})
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
   footer.addView(status)
+  compactFooter=LinearLayout(this).apply {
+   orientation=LinearLayout.HORIZONTAL
+   setPadding(dp(8),dp(5),dp(8),dp(5))
+   background=shape(Color.rgb(25,30,48),14)
+  }
+  compactToggle=styledButton("開啟卡拉 OK",true).apply {
+   textSize=12f
+   setOnClickListener {setKaraoke(!enabled)}
+  }
+  compactFullscreen=styledButton("⛶ 全螢幕").apply {
+   textSize=12f
+   setOnClickListener {immersive=!immersive;if(immersive)controlsOpen=false;applySystemBars();layoutForOrientation()}
+  }
+  compactFooter.addView(compactToggle,LinearLayout.LayoutParams(0,dp(42),1f))
+  compactFooter.addView(compactFullscreen,LinearLayout.LayoutParams(0,dp(42),1f).apply {leftMargin=dp(6)})
+  compactFooter.addView(styledButton("調整 ▴").apply {
+   textSize=12f
+   setOnClickListener {controlsOpen=true;updateControls()}
+  },LinearLayout.LayoutParams(dp(84),dp(42)).apply {leftMargin=dp(6)})
   handle=styledButton("♫  卡拉 OK",true)
   quickRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;setPadding(dp(3),dp(3),dp(3),dp(3));background=shape(Color.rgb(25,30,48),14)}
   quickToggle=styledButton("開啟卡拉 OK",true).apply {textSize=12f;setOnClickListener {setKaraoke(!enabled)}}
@@ -249,7 +272,7 @@ class MainActivity : Activity() {
  private fun landscape()=resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE
  private fun detach(view:View) {(view.parent as? android.view.ViewGroup)?.removeView(view)}
  private fun layoutForOrientation() {
-  detach(navigation);detach(web);detach(footer);detach(handle);detach(quickRow);detach(drawer);detach(panel)
+  detach(navigation);detach(web);detach(footer);detach(compactFooter);detach(handle);detach(quickRow);detach(drawer);detach(panel)
   root.removeAllViews()
   drawer.removeAllViews()
   panel.removeAllViews()
@@ -281,6 +304,7 @@ class MainActivity : Activity() {
    panel.addView(quickRow,FrameLayout.LayoutParams(dp(248),dp(48),Gravity.TOP or Gravity.RIGHT).apply {topMargin=dp(8);rightMargin=dp(8)})
    root.addView(panel,LinearLayout.LayoutParams(-1,0,1f))
    root.addView(footer,LinearLayout.LayoutParams(-1,-2))
+   root.addView(compactFooter,LinearLayout.LayoutParams(-1,-2))
   }
   updateControls()
   root.requestApplyInsets()
@@ -288,7 +312,8 @@ class MainActivity : Activity() {
  }
  private fun updateControls() {
   handle.visibility=View.VISIBLE
-  quickRow.visibility=if(controlsOpen)View.GONE else View.VISIBLE
+  quickRow.visibility=if(landscape() && !controlsOpen)View.VISIBLE else View.GONE
+  compactFooter.visibility=if(!landscape() && !controlsOpen)View.VISIBLE else View.GONE
   if(landscape()) {
    navigation.visibility=View.VISIBLE
    drawer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
@@ -299,7 +324,7 @@ class MainActivity : Activity() {
   } else {
    navigation.visibility=if(immersive)View.GONE else View.VISIBLE
    footer.visibility=if(controlsOpen)View.VISIBLE else View.GONE
-   handle.visibility=View.VISIBLE
+   handle.visibility=View.GONE
    handle.text=if(controlsOpen)"⌄  收起控制" else "♫  卡拉 OK"
    handle.contentDescription=handle.text
    quickRow.bringToFront()
@@ -317,6 +342,7 @@ class MainActivity : Activity() {
    else 0
   fullscreen.text=if(immersive)"⛶  離開全螢幕" else "⛶  全螢幕"
   quickFullscreen.text=if(immersive)"⛶ 離開全螢幕" else "⛶ 全螢幕"
+  compactFullscreen.text=quickFullscreen.text
  }
  private fun closeCustomVideo() {
   val view=customVideo ?: return
@@ -336,7 +362,7 @@ class MainActivity : Activity() {
    status.text="請輸入有效的 HTTP/HTTPS 網址";return
   }
   requestId++
-  enabled=false;toggle.text="開啟卡拉 OK";quickToggle.text="開啟卡拉 OK"
+  enabled=false;toggle.text="開啟卡拉 OK";quickToggle.text="開啟卡拉 OK";compactToggle.text="開啟卡拉 OK"
   web.loadUrl(target)
   (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(address.windowToken,0)
   address.clearFocus()
@@ -362,7 +388,7 @@ class MainActivity : Activity() {
        src.connect(split);
        // Mid/side: S=(L-R)/2. The side signal removes centered vocals
        // but also removes centered instruments. This is not source separation.
-       [[0,0,1],[1,0,-1],[1,1,1],[0,1,-1]].forEach(function(t){
+       [[0,0,.5],[1,0,-.5],[1,1,.5],[0,1,-.5]].forEach(function(t){
         const g=ctx.createGain();g.gain.value=t[2];
         split.connect(g,t[0]);g.connect(merge,0,t[1]);
        });
@@ -391,7 +417,8 @@ class MainActivity : Activity() {
       k.wet.gain.setTargetAtTime(strength,t,alpha);
       k.lowOriginal.gain.setTargetAtTime(1-strength+strength*bass,t,alpha);
       k.lowSide.gain.setTargetAtTime(strength*(1-bass),t,alpha);
-      k.out.gain.setTargetAtTime(Math.min(1,volume),t,alpha);
+      // Keep headroom for phase interactions near the crossover.
+      k.out.gain.setTargetAtTime(Math.min(.85,volume*.85),t,alpha);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     }
@@ -406,6 +433,7 @@ class MainActivity : Activity() {
      enabled=turnOn
      toggle.text=if(enabled)"關閉卡拉 OK" else "開啟卡拉 OK"
      quickToggle.text=toggle.text
+     compactToggle.text=toggle.text
      toggle.background=shape(if(enabled)Color.rgb(60,69,94) else accent,14)
      toggle.setTextColor(if(enabled)Color.WHITE else background)
      status.text=if(enabled)"DSP 已套用 · 效果依歌曲立體聲混音而異" else "已恢復原始聲音"
