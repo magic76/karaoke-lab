@@ -371,7 +371,7 @@ class MainActivity : Activity() {
   val id=++requestId
   val strength=if(turnOn)(100-retain)/100.0 else 0.0
   val bassAmount=bass/100.0
-  val output=volume/100.0
+  val output=if(turnOn)volume/100.0 else 1.0
   val script="""(function(){
    try {
     const media=Array.from(document.querySelectorAll('video,audio'));
@@ -418,13 +418,13 @@ class MainActivity : Activity() {
       k.lowOriginal.gain.setTargetAtTime(1-strength+strength*bass,t,alpha);
       k.lowSide.gain.setTargetAtTime(strength*(1-bass),t,alpha);
       // Keep headroom for phase interactions near the crossover.
-      k.out.gain.setTargetAtTime(Math.min(.85,volume*.85),t,alpha);
+      k.out.gain.setTargetAtTime(__OUTPUT_GAIN__,t,alpha);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     }
     return JSON.stringify({ok:changed>0,changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString())
+  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)output*0.85 else 1.0).toString())
   web.evaluateJavascript(script) {raw->
    if(id!=requestId)return@evaluateJavascript
    try {
