@@ -48,8 +48,6 @@ class MainActivity : Activity() {
  private lateinit var quickToggle:Button
  private lateinit var quickFullscreen:Button
  private lateinit var fullscreen:Button
- private lateinit var bassSlider:SeekBar
- private lateinit var bassPercent:TextView
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -58,9 +56,6 @@ class MainActivity : Activity() {
  private var controlsOpen=true
  private var enabled=false
  private var retain=0
- private var dspMode=2
- private lateinit var modeButton:Button
- private var bass=75
  private var requestId=0
  private val background=Color.rgb(18,22,38)
  private val accent=Color.rgb(41,211,208)
@@ -168,23 +163,12 @@ class MainActivity : Activity() {
    footer.addView(bar,LinearLayout.LayoutParams(-1,dp(36)))
    return bar to value
   }
-  modeButton=styledButton("DSP：頻譜自適應").apply {
-   setOnClickListener {
-    dspMode=(dspMode+1)%3
-    text=when(dspMode) {0->"DSP：純差分（診斷）";1->"DSP：分頻保護";else->"DSP：頻譜自適應"}
-    if(enabled)setKaraoke(true)
-   }
-  }
-  footer.addView(modeButton,LinearLayout.LayoutParams(-1,dp(42)).apply {topMargin=dp(6)})
   val vocalControl=addControl("人聲消除強度",100) {value->
    retain=100-value
    if(enabled)setKaraoke(true)
   }
   slider=vocalControl.first
   percent=vocalControl.second
-  val bassControl=addControl("低音保留",bass) {value->bass=value;if(enabled)setKaraoke(true)}
-  bassSlider=bassControl.first
-  bassPercent=bassControl.second
   footer.addView(styledButton("收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}},
    LinearLayout.LayoutParams(-1,dp(38)).apply {topMargin=dp(4)})
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
@@ -374,116 +358,43 @@ class MainActivity : Activity() {
  private fun setKaraoke(turnOn:Boolean) {
   val id=++requestId
   val strength=if(turnOn)(100-retain)/100.0 else 0.0
-  val bassAmount=bass/100.0
   val script="""(function(){
    try {
     const media=Array.from(document.querySelectorAll('video,audio'));
     if(!media.length)return JSON.stringify({ok:false,reason:'no-accessible-media'});
     const states=window.__karaokeStates||(window.__karaokeStates=new Map());
     let changed=0;const errors=[];
-    for(const v of media) {
+    for(const v of media){
      try {
       let k=states.get(v);
-      if(!k) {
+      if(!k){
        const ctx=new (window.AudioContext||window.webkitAudioContext)();
        const src=ctx.createMediaElementSource(v);
        const split=ctx.createChannelSplitter(2),merge=ctx.createChannelMerger(2);
        src.connect(split);
-       // Side is (L-R)/2 on the left and (R-L)/2 on the right.
+       // Pure stereo side signal: left=(L-R)/2, right=(R-L)/2.
        [[0,0,.5],[1,0,-.5],[1,1,.5],[0,1,-.5]].forEach(function(t){
         const g=ctx.createGain();g.gain.value=t[2];
         split.connect(g,t[0]);g.connect(merge,0,t[1]);
        });
-       const out=ctx.createGain();
-       const dry=ctx.createGain(),wet=ctx.createGain();
+       const dry=ctx.createGain(),wet=ctx.createGain(),out=ctx.createGain();
+       dry.gain.value=1;wet.gain.value=0;out.gain.value=1;
        src.connect(dry);dry.connect(out);
        merge.connect(wet);wet.connect(out);
-       // Exact complementary correction: low-original minus low-side.
-       // Baseline mode sets correction to zero and uses no crossover.
-       const lowOriginal=ctx.createBiquadFilter(),lowSide=ctx.createBiquadFilter();
-       for(const f of [lowOriginal,lowSide]){f.type='lowpass';f.frequency.value=180;f.Q.value=.707;}
-       const lowOrigGain=ctx.createGain(),lowSideGain=ctx.createGain();
-       src.connect(lowOriginal);lowOriginal.connect(lowOrigGain);lowOrigGain.connect(out);
-       merge.connect(lowSide);lowSide.connect(lowSideGain);lowSideGain.connect(out);
-       // High-frequency protection is the complementary difference:
-       // (original-side) - lowpass(original-side) above 5.2 kHz.
-       // All correction paths use the same filter coefficients.
-       const highOriginal=ctx.createBiquadFilter(),highSide=ctx.createBiquadFilter();
-       for(const f of [highOriginal,highSide]){f.type='lowpass';f.frequency.value=5200;f.Q.value=.707;}
-       const highOrigDirect=ctx.createGain(),highSideDirect=ctx.createGain();
-       const highOrigLow=ctx.createGain(),highSideLow=ctx.createGain();
-       src.connect(highOrigDirect);highOrigDirect.connect(out);
-       merge.connect(highSideDirect);highSideDirect.connect(out);
-       src.connect(highOriginal);highOriginal.connect(highOrigLow);highOrigLow.connect(out);
-       merge.connect(highSide);highSide.connect(highSideLow);highSideLow.connect(out);
-       // FFT diagnostics on mid and side energy; analyzers do not feed audio output.
-       const midMerge=ctx.createChannelMerger(1);
-       const midL=ctx.createGain(),midR=ctx.createGain();
-       midL.gain.value=.5;midR.gain.value=.5;
-       split.connect(midL,0);split.connect(midR,1);
-       midL.connect(midMerge,0,0);midR.connect(midMerge,0,0);
-       const midFFT=ctx.createAnalyser(),sideFFT=ctx.createAnalyser();
-       for(const analyzer of [midFFT,sideFFT]){analyzer.fftSize=2048;analyzer.smoothingTimeConstant=.8;}
-       midMerge.connect(midFFT);
-       const sideSplit=ctx.createChannelSplitter(2);
-       merge.connect(sideSplit);sideSplit.connect(sideFFT,0);
        out.connect(ctx.destination);
-       k={ctx,dry,wet,lowOrigGain,lowSideGain,highOrigDirect,highSideDirect,highOrigLow,highSideLow,out,midFFT,sideFFT,midBins:new Float32Array(midFFT.frequencyBinCount),sideBins:new Float32Array(sideFFT.frequencyBinCount),timer:null,config:null};
-       // Start in bypass to prevent loud transients before gains are configured.
-       for(const name of ['wet','lowOrigGain','lowSideGain','highOrigDirect','highSideDirect','highOrigLow','highSideLow'])k[name].gain.value=0;
-       k.dry.gain.value=1;k.out.gain.value=1;
+       k={ctx,dry,wet,out};
        states.set(v,k);
       }
-      const t=k.ctx.currentTime,alpha=.05;
-      const strength=__STRENGTH__,bass=__BASS__,mode=__MODE__;
-      function ramp(node,value){node.gain.setTargetAtTime(value,k.ctx.currentTime,alpha);}
-      function apply(effective){
-       const low=mode!==0?effective*bass:0;
-       const high=mode!==0?effective*.35:0;
-       ramp(k.dry,1-effective);ramp(k.wet,effective);
-       ramp(k.lowOrigGain,low);ramp(k.lowSideGain,-low);
-       ramp(k.highOrigDirect,high);ramp(k.highSideDirect,-high);
-       ramp(k.highOrigLow,-high);ramp(k.highSideLow,high);
-      }
-      // Prevent stale timers when toggling mode or turning karaoke off.
-      if(k.timer!==null){clearInterval(k.timer);k.timer=null;}
-      apply(strength);
-      if(mode===2 && strength>0) {
-       let smoothed=strength;
-       k.timer=setInterval(function(){
-        if(k.ctx.state==='closed'){clearInterval(k.timer);k.timer=null;return;}
-        try {
-         k.midFFT.getFloatFrequencyData(k.midBins);
-         k.sideFFT.getFloatFrequencyData(k.sideBins);
-         const hzPerBin=k.ctx.sampleRate/k.midFFT.fftSize;
-         const first=Math.max(1,Math.ceil(250/hzPerBin));
-         const last=Math.min(k.midBins.length-1,Math.floor(3800/hzPerBin));
-         let midEnergy=0,sideEnergy=0,count=0;
-         for(let i=first;i<=last;i+=2){
-          const m=k.midBins[i],v=k.sideBins[i];
-          if(!Number.isFinite(m)||!Number.isFinite(v))continue;
-          midEnergy+=Math.pow(10,Math.max(-100,m)/10);
-          sideEnergy+=Math.pow(10,Math.max(-100,v)/10);
-          count++;
-         }
-         if(!count)return;
-         // Preserve accompaniment when side energy dominates; suppress more
-         // when the center dominates. This is an energy heuristic, not AI.
-         const centerRatio=midEnergy/(midEnergy+sideEnergy+1e-12);
-         const confidence=Math.max(0,Math.min(1,(centerRatio-.48)/.40));
-         const target=strength*(.40+.60*confidence);
-         smoothed+=.18*(target-smoothed);
-         apply(smoothed);
-        }catch(e){clearInterval(k.timer);k.timer=null;}
-       },100);
-      }
-      ramp(k.out,__OUTPUT_GAIN__);
+      const t=k.ctx.currentTime,alpha=.05,strength=__STRENGTH__;
+      k.dry.gain.setTargetAtTime(1-strength,t,alpha);
+      k.wet.gain.setTargetAtTime(strength,t,alpha);
+      k.out.gain.setTargetAtTime(__OUTPUT_GAIN__,t,alpha);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     }
     return JSON.stringify({ok:changed>0,changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__MODE__",dspMode.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)0.8 else 1.0).toString())
+  })()""".replace("__STRENGTH__",strength.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)0.8 else 1.0).toString())
   web.evaluateJavascript(script) {raw->
    if(id!=requestId)return@evaluateJavascript
    try {
