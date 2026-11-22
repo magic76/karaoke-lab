@@ -425,7 +425,8 @@ class MainActivity : Activity() {
        const midFFT=ctx.createAnalyser(),sideFFT=ctx.createAnalyser();
        for(const analyzer of [midFFT,sideFFT]){analyzer.fftSize=2048;analyzer.smoothingTimeConstant=.8;}
        midMerge.connect(midFFT);
-       merge.connect(sideFFT);
+       const sideSplit=ctx.createChannelSplitter(2);
+       merge.connect(sideSplit);sideSplit.connect(sideFFT,0);
        out.connect(ctx.destination);
        k={ctx,dry,wet,lowOrigGain,lowSideGain,highOrigDirect,highSideDirect,highOrigLow,highSideLow,out,midFFT,sideFFT,midBins:new Float32Array(midFFT.frequencyBinCount),sideBins:new Float32Array(sideFFT.frequencyBinCount),timer:null,config:null};
        // Start in bypass to prevent loud transients before gains are configured.
