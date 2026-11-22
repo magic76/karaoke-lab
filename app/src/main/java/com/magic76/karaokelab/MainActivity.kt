@@ -60,6 +60,8 @@ class MainActivity : Activity() {
  private var controlsOpen=true
  private var enabled=false
  private var retain=0
+ private var dspMode=1
+ private lateinit var modeButton:Button
  private var bass=75
  private var volume=100
  private var requestId=0
@@ -169,6 +171,14 @@ class MainActivity : Activity() {
    footer.addView(bar,LinearLayout.LayoutParams(-1,dp(36)))
    return bar to value
   }
+  modeButton=styledButton("DSP：分頻保護").apply {
+   setOnClickListener {
+    dspMode=1-dspMode
+    text=if(dspMode==0)"DSP：純差分（診斷）" else "DSP：分頻保護"
+    if(enabled)setKaraoke(true)
+   }
+  }
+  footer.addView(modeButton,LinearLayout.LayoutParams(-1,dp(42)).apply {topMargin=dp(6)})
   val vocalControl=addControl("人聲消除強度",100) {value->
    retain=100-value
    if(enabled)setKaraoke(true)
@@ -386,45 +396,56 @@ class MainActivity : Activity() {
        const src=ctx.createMediaElementSource(v);
        const split=ctx.createChannelSplitter(2),merge=ctx.createChannelMerger(2);
        src.connect(split);
-       // Mid/side: S=(L-R)/2. The side signal removes centered vocals
-       // but also removes centered instruments. This is not source separation.
+       // Side is (L-R)/2 on the left and (R-L)/2 on the right.
        [[0,0,.5],[1,0,-.5],[1,1,.5],[0,1,-.5]].forEach(function(t){
         const g=ctx.createGain();g.gain.value=t[2];
         split.connect(g,t[0]);g.connect(merge,0,t[1]);
        });
-       const sideLow=ctx.createBiquadFilter(),sideHigh=ctx.createBiquadFilter();
-       const originalLow=ctx.createBiquadFilter(),originalHigh=ctx.createBiquadFilter();
-       for(const f of [sideLow,originalLow]){f.type='lowpass';f.frequency.value=180;f.Q.value=.707;}
-       for(const f of [sideHigh,originalHigh]){f.type='highpass';f.frequency.value=180;f.Q.value=.707;}
-       const dry=ctx.createGain(),wet=ctx.createGain();
-       const lowOriginal=ctx.createGain(),lowSide=ctx.createGain();
        const out=ctx.createGain();
-       // All paths feed a single output gain to prevent accidental double volume.
-       src.connect(originalHigh);originalHigh.connect(dry);dry.connect(out);
-       merge.connect(sideHigh);sideHigh.connect(wet);wet.connect(out);
-       src.connect(originalLow);originalLow.connect(lowOriginal);lowOriginal.connect(out);
-       merge.connect(sideLow);sideLow.connect(lowSide);lowSide.connect(out);
+       const dry=ctx.createGain(),wet=ctx.createGain();
+       src.connect(dry);dry.connect(out);
+       merge.connect(wet);wet.connect(out);
+       // Exact complementary correction: low-original minus low-side.
+       // Baseline mode sets correction to zero and uses no crossover.
+       const lowOriginal=ctx.createBiquadFilter(),lowSide=ctx.createBiquadFilter();
+       for(const f of [lowOriginal,lowSide]){f.type='lowpass';f.frequency.value=180;f.Q.value=.707;}
+       const lowOrigGain=ctx.createGain(),lowSideGain=ctx.createGain();
+       src.connect(lowOriginal);lowOriginal.connect(lowOrigGain);lowOrigGain.connect(out);
+       merge.connect(lowSide);lowSide.connect(lowSideGain);lowSideGain.connect(out);
+       // High-frequency protection is the complementary difference:
+       // (original-side) - lowpass(original-side) above 5.2 kHz.
+       // All correction paths use the same filter coefficients.
+       const highOriginal=ctx.createBiquadFilter(),highSide=ctx.createBiquadFilter();
+       for(const f of [highOriginal,highSide]){f.type='lowpass';f.frequency.value=5200;f.Q.value=.707;}
+       const highOrigDirect=ctx.createGain(),highSideDirect=ctx.createGain();
+       const highOrigLow=ctx.createGain(),highSideLow=ctx.createGain();
+       src.connect(highOrigDirect);highOrigDirect.connect(out);
+       merge.connect(highSideDirect);highSideDirect.connect(out);
+       src.connect(highOriginal);highOriginal.connect(highOrigLow);highOrigLow.connect(out);
+       merge.connect(highSide);highSide.connect(highSideLow);highSideLow.connect(out);
        out.connect(ctx.destination);
-       k={ctx,dry,wet,lowOriginal,lowSide,out};
+       k={ctx,dry,wet,lowOrigGain,lowSideGain,highOrigDirect,highSideDirect,highOrigLow,highSideLow,out};
+       // Start in bypass to prevent loud transients before gains are configured.
+       for(const name of ['wet','lowOrigGain','lowSideGain','highOrigDirect','highSideDirect','highOrigLow','highSideLow'])k[name].gain.value=0;
+       k.dry.gain.value=1;k.out.gain.value=1;
        states.set(v,k);
       }
-      const t=k.ctx.currentTime,alpha=.035;
-      const strength=__STRENGTH__,bass=__BASS__,volume=__VOLUME__;
-      // Above 180Hz crossfade original with side signal.
-      // Below 180Hz retain the center according to the bass slider.
-      // Smooth all changes to avoid clicks.
-      k.dry.gain.setTargetAtTime(1-strength,t,alpha);
-      k.wet.gain.setTargetAtTime(strength,t,alpha);
-      k.lowOriginal.gain.setTargetAtTime(1-strength+strength*bass,t,alpha);
-      k.lowSide.gain.setTargetAtTime(strength*(1-bass),t,alpha);
-      // Keep headroom for phase interactions near the crossover.
-      k.out.gain.setTargetAtTime(__OUTPUT_GAIN__,t,alpha);
+      const t=k.ctx.currentTime,alpha=.05;
+      const strength=__STRENGTH__,bass=__BASS__,volume=__VOLUME__,mode=__MODE__;
+      const low=mode===1?strength*bass:0;
+      const high=mode===1?strength*.35:0;
+      function ramp(node,value){node.gain.setTargetAtTime(value,t,alpha);}
+      ramp(k.dry,1-strength);ramp(k.wet,strength);
+      ramp(k.lowOrigGain,low);ramp(k.lowSideGain,-low);
+      ramp(k.highOrigDirect,high);ramp(k.highSideDirect,-high);
+      ramp(k.highOrigLow,-high);ramp(k.highSideLow,high);
+      ramp(k.out,__OUTPUT_GAIN__);
       k.ctx.resume();changed++;
      }catch(e){errors.push(String(e));}
     }
     return JSON.stringify({ok:changed>0,changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)output*0.85 else 1.0).toString())
+  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString()).replace("__MODE__",dspMode.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)output*0.8 else 1.0).toString())
   web.evaluateJavascript(script) {raw->
    if(id!=requestId)return@evaluateJavascript
    try {
