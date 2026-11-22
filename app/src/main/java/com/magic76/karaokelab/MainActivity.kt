@@ -49,9 +49,7 @@ class MainActivity : Activity() {
  private lateinit var quickFullscreen:Button
  private lateinit var fullscreen:Button
  private lateinit var bassSlider:SeekBar
- private lateinit var volumeSlider:SeekBar
  private lateinit var bassPercent:TextView
- private lateinit var volumePercent:TextView
  private var immersive=false
  private var customVideo:View?=null
  private var customVideoCallback:WebChromeClient.CustomViewCallback?=null
@@ -63,7 +61,6 @@ class MainActivity : Activity() {
  private var dspMode=1
  private lateinit var modeButton:Button
  private var bass=75
- private var volume=100
  private var requestId=0
  private val background=Color.rgb(18,22,38)
  private val accent=Color.rgb(41,211,208)
@@ -188,9 +185,6 @@ class MainActivity : Activity() {
   val bassControl=addControl("低音保留",bass) {value->bass=value;if(enabled)setKaraoke(true)}
   bassSlider=bassControl.first
   bassPercent=bassControl.second
-  val volumeControl=addControl("輸出音量",volume) {value->volume=value;if(enabled)setKaraoke(true)}
-  volumeSlider=volumeControl.first
-  volumePercent=volumeControl.second
   footer.addView(styledButton("收起控制").apply {setOnClickListener {controlsOpen=false;updateControls()}},
    LinearLayout.LayoutParams(-1,dp(38)).apply {topMargin=dp(4)})
   status=caption("播放音樂後，可開啟卡拉 OK 模式").apply {textSize=12f}
@@ -381,7 +375,6 @@ class MainActivity : Activity() {
   val id=++requestId
   val strength=if(turnOn)(100-retain)/100.0 else 0.0
   val bassAmount=bass/100.0
-  val output=if(turnOn)volume/100.0 else 1.0
   val script="""(function(){
    try {
     const media=Array.from(document.querySelectorAll('video,audio'));
@@ -431,7 +424,7 @@ class MainActivity : Activity() {
        states.set(v,k);
       }
       const t=k.ctx.currentTime,alpha=.05;
-      const strength=__STRENGTH__,bass=__BASS__,volume=__VOLUME__,mode=__MODE__;
+      const strength=__STRENGTH__,bass=__BASS__,mode=__MODE__;
       const low=mode===1?strength*bass:0;
       const high=mode===1?strength*.35:0;
       function ramp(node,value){node.gain.setTargetAtTime(value,t,alpha);}
@@ -445,7 +438,7 @@ class MainActivity : Activity() {
     }
     return JSON.stringify({ok:changed>0,changed,total:media.length,errors:errors.slice(0,2)});
    }catch(e){return JSON.stringify({ok:false,reason:String(e)});}
-  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__VOLUME__",output.toString()).replace("__MODE__",dspMode.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)output*0.8 else 1.0).toString())
+  })()""".replace("__STRENGTH__",strength.toString()).replace("__BASS__",bassAmount.toString()).replace("__MODE__",dspMode.toString()).replace("__OUTPUT_GAIN__",(if(turnOn)0.8 else 1.0).toString())
   web.evaluateJavascript(script) {raw->
    if(id!=requestId)return@evaluateJavascript
    try {
